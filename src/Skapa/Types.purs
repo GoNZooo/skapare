@@ -29,6 +29,15 @@ instance showEntity :: Show Entity where
   show (File fileData) = "File " <> show fileData
   show (Directory directoryData) = "Directory " <> show directoryData
 
+newtype FileOutput = FileOutput
+  { path :: String
+  , contents :: String
+  }
+
+derive newtype instance eqFileOutput :: Eq FileOutput
+derive instance genericFileOutput :: Generic FileOutput _
+derive instance newtypeFileOutput :: Newtype FileOutput _
+
 newtype Identifier = Identifier String
 
 derive newtype instance eqIdentifier :: Eq Identifier
