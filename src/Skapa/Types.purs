@@ -38,6 +38,9 @@ derive newtype instance eqFileOutput :: Eq FileOutput
 derive instance genericFileOutput :: Generic FileOutput _
 derive instance newtypeFileOutput :: Newtype FileOutput _
 
+instance showFileOutput :: Show FileOutput where
+  show = genericShow
+
 newtype Identifier = Identifier String
 
 derive newtype instance eqIdentifier :: Eq Identifier
