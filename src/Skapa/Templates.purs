@@ -1,13 +1,22 @@
 module Skapa.Templates
   ( instantiate
+  , pathToEntity
   ) where
 
 import Prelude
 
 import Data.Array as Array
 import Data.Foldable (foldMap)
+import Data.Maybe (Maybe(..))
 import Data.TemplateString as TemplateString
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple)
+import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
+import Node.Buffer as Buffer
+import Node.Encoding as Encoding
+import Node.FS.Aff as FileSystem
+import Node.FS.Stats as Stats
 import Skapa.Types (Entity(..), FileOutput(..), Template(..))
 
 -- | Instantiates a template with a set of variables so that it can be filled in.
@@ -26,3 +35,23 @@ prependPath path (File { path: childPath, content }) =
   File { path: path <> "/" <> childPath, content }
 prependPath path (Directory { path: childPath, children }) =
   Directory { path: path <> "/" <> childPath, children }
+
+pathToEntity :: String -> Aff (Maybe Entity)
+pathToEntity path = do
+  stats <- FileSystem.stat path
+  if Stats.isDirectory stats then
+    directoryToEntity path
+  else
+    fileToEntity path
+
+directoryToEntity :: String -> Aff (Maybe Entity)
+directoryToEntity path = do
+  children <- FileSystem.readdir path
+  entities <- traverse pathToEntity (map (\p -> path <> "/" <> p) children)
+  { path, children: Array.catMaybes entities } # Directory # Just # pure
+
+fileToEntity :: String -> Aff (Maybe Entity)
+fileToEntity path = do
+  buffer <- FileSystem.readFile path
+  content <- buffer # Buffer.toString Encoding.UTF8 # liftEffect
+  { path, content } # File # Just # pure
