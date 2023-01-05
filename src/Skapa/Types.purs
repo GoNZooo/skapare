@@ -8,9 +8,29 @@ import Data.Semigroup ((<>))
 import Data.Show (class Show, show)
 import Data.Show.Generic (genericShow)
 
+newtype TemplateId = TemplateId String
+
+derive newtype instance eqTemplateId :: Eq TemplateId
+derive newtype instance ordTemplateId :: Ord TemplateId
+derive instance newtypeTemplateId :: Newtype TemplateId _
+derive instance genericTemplateId :: Generic TemplateId _
+
+instance showTemplateId :: Show TemplateId where
+  show (TemplateId s) = "TemplateId " <> show s
+
+newtype TemplateDescription = TemplateDescription String
+
+derive newtype instance eqTemplateDescription :: Eq TemplateDescription
+derive newtype instance ordTemplateDescription :: Ord TemplateDescription
+derive instance newtypeTemplateDescription :: Newtype TemplateDescription _
+derive instance genericTemplateDescription :: Generic TemplateDescription _
+
+instance showTemplateDescription :: Show TemplateDescription where
+  show (TemplateDescription s) = "TemplateDescription " <> show s
+
 newtype Template = Template
-  { id :: String
-  , description :: String
+  { id :: TemplateId
+  , description :: TemplateDescription
   , entities :: Array Entity
   }
 

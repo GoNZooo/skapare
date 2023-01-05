@@ -4,7 +4,7 @@ import Prelude
 
 import Data.Tuple.Nested ((/\))
 import Skapa.Templates as Template
-import Skapa.Types (Entity(..), FileOutput(..), Template(..))
+import Skapa.Types (Entity(..), FileOutput(..), Template(..), TemplateDescription(..), TemplateId(..))
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -13,7 +13,8 @@ spec = do
   describe "Skapa.Templates" do
     it "should be able to instantiate a simple file entity" do
       let
-        template = Template { id: "id", description: "description", entities }
+        template = Template
+          { id: TemplateId "id", description: TemplateDescription "description", entities }
         entities =
           [ File { path: "path", content: "This is a templated value: ${value}" }
           ]
@@ -23,7 +24,8 @@ spec = do
 
     it "should be able to instantiate a directory of file entities" do
       let
-        template = Template { id: "id", description: "description", entities }
+        template = Template
+          { id: TemplateId "id", description: TemplateDescription "description", entities }
         entities =
           [ Directory
               { path: "path"

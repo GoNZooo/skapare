@@ -1,6 +1,6 @@
 module Skapa.Templates
   ( instantiate
-  , pathToEntity
+  , pathToTemplate
   ) where
 
 import Prelude
@@ -17,7 +17,7 @@ import Node.Buffer as Buffer
 import Node.Encoding as Encoding
 import Node.FS.Aff as FileSystem
 import Node.FS.Stats as Stats
-import Skapa.Types (Entity(..), FileOutput(..), Template(..))
+import Skapa.Types (Entity(..), FileOutput(..), Template(..), TemplateDescription, TemplateId)
 
 -- | Instantiates a template with a set of variables so that it can be filled in.
 instantiate :: Template -> Array (Tuple String String) -> Array FileOutput
@@ -35,6 +35,10 @@ prependPath path (File { path: childPath, content }) =
   File { path: path <> "/" <> childPath, content }
 prependPath path (Directory { path: childPath, children }) =
   Directory { path: path <> "/" <> childPath, children }
+
+pathToTemplate :: TemplateId -> TemplateDescription -> String -> Aff (Maybe Template)
+pathToTemplate id description path =
+  map (\entity -> Template { id, description, entities: [ entity ] }) <$> pathToEntity path
 
 pathToEntity :: String -> Aff (Maybe Entity)
 pathToEntity path = do
