@@ -38,6 +38,9 @@ derive newtype instance eqTemplate :: Eq Template
 derive instance genericTemplate :: Generic Template _
 derive instance newtypeTemplate :: Newtype Template _
 
+instance showTemplate :: Show Template where
+  show = genericShow
+
 data Entity
   = File { path :: String, content :: String }
   | Directory { path :: String, children :: Array Entity }
