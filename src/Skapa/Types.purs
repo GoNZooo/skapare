@@ -1,17 +1,21 @@
 module Skapa.Types where
 
 import Data.Eq (class Eq)
+import Data.Function (($))
 import Data.Generic.Rep (class Generic)
 import Data.Newtype (class Newtype)
 import Data.Ord (class Ord)
 import Data.Semigroup ((<>))
 import Data.Show (class Show, show)
 import Data.Show.Generic (genericShow)
+import Record as Record
+import Simple.JSON (class WriteForeign, writeImpl)
 
 newtype TemplateId = TemplateId String
 
 derive newtype instance eqTemplateId :: Eq TemplateId
 derive newtype instance ordTemplateId :: Ord TemplateId
+derive newtype instance writeForeignTemplateId :: WriteForeign TemplateId
 derive instance newtypeTemplateId :: Newtype TemplateId _
 derive instance genericTemplateId :: Generic TemplateId _
 
@@ -22,6 +26,7 @@ newtype TemplateDescription = TemplateDescription String
 
 derive newtype instance eqTemplateDescription :: Eq TemplateDescription
 derive newtype instance ordTemplateDescription :: Ord TemplateDescription
+derive newtype instance writeForeignTemplateDescription :: WriteForeign TemplateDescription
 derive instance newtypeTemplateDescription :: Newtype TemplateDescription _
 derive instance genericTemplateDescription :: Generic TemplateDescription _
 
@@ -37,6 +42,7 @@ newtype Template = Template
 derive newtype instance eqTemplate :: Eq Template
 derive instance genericTemplate :: Generic Template _
 derive instance newtypeTemplate :: Newtype Template _
+derive newtype instance writeForeignTemplate :: WriteForeign Template
 
 instance showTemplate :: Show Template where
   show = genericShow
@@ -51,6 +57,10 @@ derive instance genericEntity :: Generic Entity _
 instance showEntity :: Show Entity where
   show (File fileData) = "File " <> show fileData
   show (Directory directoryData) = "Directory " <> show directoryData
+
+instance writeForeignEntity :: WriteForeign Entity where
+  writeImpl (File d) = writeImpl $ d `Record.merge` { type: "file" }
+  writeImpl (Directory d) = writeImpl $ d `Record.merge` { type: "directory" }
 
 newtype FileOutput = FileOutput
   { path :: String

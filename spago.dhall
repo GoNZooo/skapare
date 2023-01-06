@@ -24,6 +24,8 @@ to generate this file without the comments in this block.
   , "node-fs-aff"
   , "prelude"
   , "quickcheck"
+  , "record"
+  , "simple-json"
   , "spec"
   , "template-strings"
   , "tuples"
