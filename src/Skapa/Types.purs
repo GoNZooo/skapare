@@ -3,6 +3,7 @@ module Skapa.Types where
 import Data.Eq (class Eq)
 import Data.Function (($))
 import Data.Generic.Rep (class Generic)
+import Data.Maybe (Maybe)
 import Data.Newtype (class Newtype)
 import Data.Ord (class Ord)
 import Data.Semigroup ((<>))
@@ -10,6 +11,17 @@ import Data.Show (class Show, show)
 import Data.Show.Generic (genericShow)
 import Record as Record
 import Simple.JSON (class WriteForeign, writeImpl)
+
+-- | The source of templates we want to instantiate.
+data TemplateSource = GitHubSource
+  { user :: String, repo :: Maybe String }
+
+derive instance eqTemplateSource :: Eq TemplateSource
+derive instance genericTemplateSource :: Generic TemplateSource _
+derive instance ordTemplateSource :: Ord TemplateSource
+
+instance showTemplateSource :: Show TemplateSource where
+  show = genericShow
 
 newtype TemplateId = TemplateId String
 
