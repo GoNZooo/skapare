@@ -19,13 +19,13 @@ import Skapa.Types (TemplateId(..), TemplateSource(..))
 
 type Bindings = Map String String
 
-data Command = Create { source :: TemplateSource, id :: TemplateId, bindings :: Bindings }
+data Command = Generate { source :: TemplateSource, id :: TemplateId, bindings :: Bindings }
 
 parseCommand :: ArgParser Command
 parseCommand =
   ArgParse.choose "command"
-    [ ArgParse.command [ "create", "c" ] "Create a new project from a template" do
-        Create
+    [ ArgParse.command [ "generate", "g" ] "Generate files from a template" do
+        Generate
           <$> ArgParse.fromRecord
             { source: parseTemplateSource
             , id: TemplateId <$> ArgParse.argument [ "-i", "-id" ] "Template name/ID"
@@ -38,12 +38,10 @@ parseTemplateSource :: ArgParser TemplateSource
 parseTemplateSource =
   GitHubSource
     <$> ArgParse.fromRecord
-      { user: ArgParse.argument [ "-u", "--user" ] "Where we will get the templates from"
+      { user: ArgParse.argument [ "-u", "--user" ] "Which user to access"
       , repo:
           ArgParse.optional
-            ( ArgParse.argument [ "-r", "--repo" ]
-                "Where we will get the templates from"
-            )
+            (ArgParse.argument [ "-r", "--repo" ] "Which repo to access")
       }
 
 parseBindings :: ArgParser Bindings
@@ -69,7 +67,7 @@ main = do
       Process.exit 1
     Right command -> do
       case command of
-        Create { source, id, bindings } -> do
+        Generate { source, id, bindings } -> do
           Console.log $ "Creating a new project from a template from " <> show source <> " with id "
             <> show id
             <> " and bindings "
