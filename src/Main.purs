@@ -19,7 +19,9 @@ import Skapa.Types (TemplateId(..), TemplateSource(..))
 
 type Bindings = Map String String
 
-data Command = Generate { source :: TemplateSource, id :: TemplateId, bindings :: Bindings }
+data Command
+  = Generate { source :: TemplateSource, id :: TemplateId, bindings :: Bindings }
+  | Synthesize { path :: String, id :: TemplateId, description :: String, bindings :: Bindings }
 
 parseCommand :: ArgParser Command
 parseCommand =
@@ -29,6 +31,15 @@ parseCommand =
           <$> ArgParse.fromRecord
             { source: parseTemplateSource
             , id: TemplateId <$> ArgParse.argument [ "-i", "-id" ] "Template name/ID"
+            , bindings: parseBindings
+            }
+          <* ArgParse.flagHelp
+    , ArgParse.command [ "synthesize", "s" ] "Synthesize a template from a file/directory" do
+        Synthesize
+          <$> ArgParse.fromRecord
+            { path: ArgParse.argument [ "-p", "-path" ] "Path to file/directory"
+            , id: TemplateId <$> ArgParse.argument [ "-i", "-id" ] "Template name/ID"
+            , description: ArgParse.argument [ "-d", "-description" ] "Template description"
             , bindings: parseBindings
             }
           <* ArgParse.flagHelp
@@ -70,5 +81,12 @@ main = do
         Generate { source, id, bindings } -> do
           Console.log $ "Creating a new project from a template from " <> show source <> " with id "
             <> show id
+            <> " and bindings "
+            <> show bindings
+        Synthesize { path, id, description, bindings } -> do
+          Console.log $ "Synthesizing a new template from " <> path <> " with id "
+            <> show id
+            <> " and description "
+            <> description
             <> " and bindings "
             <> show bindings
