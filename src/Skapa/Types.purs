@@ -3,6 +3,7 @@ module Skapa.Types where
 import Data.Eq (class Eq)
 import Data.Function (($))
 import Data.Generic.Rep (class Generic)
+import Data.Map (Map)
 import Data.Maybe (Maybe)
 import Data.Newtype (class Newtype)
 import Data.Ord (class Ord)
@@ -11,6 +12,27 @@ import Data.Show (class Show, show)
 import Data.Show.Generic (genericShow)
 import Record as Record
 import Simple.JSON (class WriteForeign, writeImpl)
+
+data Command
+  = Generate
+      { source :: TemplateSource
+      , id :: TemplateId
+      , bindings :: Bindings
+      }
+  | Synthesize
+      { path :: String
+      , id :: TemplateId
+      , description :: TemplateDescription
+      , bindings :: Bindings
+      , outputDirectory :: Maybe String
+      }
+
+newtype Bindings = Bindings (Map String String)
+
+derive instance eqBindings :: Eq Bindings
+derive instance newtypeBindings :: Newtype Bindings _
+derive instance genericBindings :: Generic Bindings _
+derive newtype instance showBindings :: Show Bindings
 
 -- | The source of templates we want to instantiate.
 data TemplateSource = GitHubSource

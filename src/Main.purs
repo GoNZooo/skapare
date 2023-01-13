@@ -6,22 +6,28 @@ import ArgParse.Basic (ArgParser)
 import ArgParse.Basic as ArgParse
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Newtype (unwrap)
 import Data.String (Pattern(..))
 import Data.String as String
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
+import Effect.Aff as Aff
+import Effect.Class (liftEffect)
 import Effect.Console as Console
+import Node.Encoding as Encoding
+import Node.FS.Aff as FS
 import Node.Process as Process
-import Skapa.Types (TemplateId(..), TemplateSource(..))
-
-type Bindings = Map String String
-
-data Command
-  = Generate { source :: TemplateSource, id :: TemplateId, bindings :: Bindings }
-  | Synthesize { path :: String, id :: TemplateId, description :: String, bindings :: Bindings }
+import Simple.JSON as Json
+import Skapa.Templates as Templates
+import Skapa.Types
+  ( Bindings(..)
+  , Command(..)
+  , TemplateDescription(..)
+  , TemplateId(..)
+  , TemplateSource(..)
+  )
 
 parseCommand :: ArgParser Command
 parseCommand =
@@ -39,8 +45,11 @@ parseCommand =
           <$> ArgParse.fromRecord
             { path: ArgParse.argument [ "-p", "-path" ] "Path to file/directory"
             , id: TemplateId <$> ArgParse.argument [ "-i", "-id" ] "Template name/ID"
-            , description: ArgParse.argument [ "-d", "-description" ] "Template description"
+            , description: TemplateDescription <$> ArgParse.argument [ "-d", "-description" ]
+                "Template description"
             , bindings: parseBindings
+            , outputDirectory: ArgParse.optional
+                (ArgParse.argument [ "-o", "-output" ] "Output directory")
             }
           <* ArgParse.flagHelp
     ]
@@ -56,7 +65,7 @@ parseTemplateSource =
       }
 
 parseBindings :: ArgParser Bindings
-parseBindings = Map.fromFoldable <$> ArgParse.many parseEqualBinding
+parseBindings = (Map.fromFoldable >>> Bindings) <$> ArgParse.many parseEqualBinding
 
 parseEqualBinding :: ArgParser (Tuple String String)
 parseEqualBinding =
@@ -83,10 +92,7 @@ main = do
             <> show id
             <> " and bindings "
             <> show bindings
-        Synthesize { path, id, description, bindings } -> do
-          Console.log $ "Synthesizing a new template from " <> path <> " with id "
-            <> show id
-            <> " and description "
-            <> description
-            <> " and bindings "
-            <> show bindings
+        Synthesize { path, id, description, bindings, outputDirectory } -> Aff.launchAff_ do
+          template <- Templates.pathToTemplate id description bindings path
+          let filename = fromMaybe "." outputDirectory <> "/" <> (unwrap id) <> ".json"
+          FS.writeTextFile (Encoding.UTF8) filename (Json.writeJSON template)
