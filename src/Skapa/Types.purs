@@ -1,30 +1,33 @@
 module Skapa.Types where
 
-import Data.Eq (class Eq)
-import Data.Function (($))
+import Prelude
+
 import Data.Generic.Rep (class Generic)
 import Data.Map (Map)
 import Data.Maybe (Maybe)
-import Data.Newtype (class Newtype)
-import Data.Ord (class Ord)
-import Data.Semigroup ((<>))
-import Data.Show (class Show, show)
+import Data.Newtype (class Newtype, unwrap)
 import Data.Show.Generic (genericShow)
+import Foreign (ForeignError(..), fail)
+import Node.Path (FilePath)
 import Record as Record
-import Simple.JSON (class WriteForeign, writeImpl)
+import Simple.JSON (class ReadForeign, class WriteForeign, readImpl, writeImpl)
 
 data Command
-  = Generate
+  = GenerateFromGitHub
       { source :: TemplateSource
       , id :: TemplateId
       , bindings :: Bindings
       }
+  | GenerateFromPath
+      { path :: FilePath
+      , bindings :: Bindings
+      }
   | Synthesize
-      { path :: String
+      { path :: FilePath
       , id :: TemplateId
       , description :: TemplateDescription
       , bindings :: Bindings
-      , outputDirectory :: Maybe String
+      , outputDirectory :: Maybe FilePath
       }
 
 newtype Bindings = Bindings (Map String String)
@@ -35,8 +38,7 @@ derive instance genericBindings :: Generic Bindings _
 derive newtype instance showBindings :: Show Bindings
 
 -- | The source of templates we want to instantiate.
-data TemplateSource = GitHubSource
-  { user :: String, repo :: Maybe String }
+data TemplateSource = GitHubSource { user :: String, repo :: Maybe String }
 
 derive instance eqTemplateSource :: Eq TemplateSource
 derive instance genericTemplateSource :: Generic TemplateSource _
@@ -50,6 +52,7 @@ newtype TemplateId = TemplateId String
 derive newtype instance eqTemplateId :: Eq TemplateId
 derive newtype instance ordTemplateId :: Ord TemplateId
 derive newtype instance writeForeignTemplateId :: WriteForeign TemplateId
+derive newtype instance readForeignTemplateId :: ReadForeign TemplateId
 derive instance newtypeTemplateId :: Newtype TemplateId _
 derive instance genericTemplateId :: Generic TemplateId _
 
@@ -61,6 +64,7 @@ newtype TemplateDescription = TemplateDescription String
 derive newtype instance eqTemplateDescription :: Eq TemplateDescription
 derive newtype instance ordTemplateDescription :: Ord TemplateDescription
 derive newtype instance writeForeignTemplateDescription :: WriteForeign TemplateDescription
+derive newtype instance readForeignTemplateDescription :: ReadForeign TemplateDescription
 derive instance newtypeTemplateDescription :: Newtype TemplateDescription _
 derive instance genericTemplateDescription :: Generic TemplateDescription _
 
@@ -77,6 +81,7 @@ derive newtype instance eqTemplate :: Eq Template
 derive instance genericTemplate :: Generic Template _
 derive instance newtypeTemplate :: Newtype Template _
 derive newtype instance writeForeignTemplate :: WriteForeign Template
+derive newtype instance readForeignTemplate :: ReadForeign Template
 
 instance showTemplate :: Show Template where
   show = genericShow
@@ -95,6 +100,14 @@ instance showEntity :: Show Entity where
 instance writeForeignEntity :: WriteForeign Entity where
   writeImpl (File d) = writeImpl $ d `Record.merge` { type: "file" }
   writeImpl (Directory d) = writeImpl $ d `Record.merge` { type: "directory" }
+
+instance readForeignEntity :: ReadForeign Entity where
+  readImpl f = do
+    r <- (HasTypeField >>> unwrap) <$> readImpl f
+    case r.type of
+      "file" -> File <$> readImpl f
+      "directory" -> Directory <$> readImpl f
+      other -> fail $ ForeignError $ "Unknown 'Entity' type field: " <> other
 
 newtype FileOutput = FileOutput
   { path :: String
@@ -117,3 +130,10 @@ derive instance newtypeIdentifier :: Newtype Identifier _
 
 instance showIdentifier :: Show Identifier where
   show = genericShow
+
+newtype HasTypeField = HasTypeField { type :: String }
+
+derive instance newtypeHasTypeField :: Newtype HasTypeField _
+
+instance readForeignHasTypeField :: ReadForeign HasTypeField where
+  readImpl f = HasTypeField <$> readImpl f

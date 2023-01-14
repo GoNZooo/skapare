@@ -2,11 +2,13 @@ module Skapa.Templates
   ( instantiate
   , pathToTemplate
   , pathsToTemplate
+  , loadTemplateFromPath
   ) where
 
 import Prelude
 
 import Data.Array as Array
+import Data.Either (Either)
 import Data.Foldable (fold, foldMap)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
@@ -19,10 +21,13 @@ import Data.Tuple (Tuple)
 import Data.Tuple.Nested ((/\))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Foreign (MultipleErrors)
 import Node.Buffer as Buffer
 import Node.Encoding as Encoding
 import Node.FS.Aff as FileSystem
 import Node.FS.Stats as Stats
+import Node.Path (FilePath)
+import Simple.JSON as Json
 import Skapa.Types
   ( Bindings
   , Entity(..)
@@ -48,6 +53,11 @@ pathsToTemplate id description bindings paths = do
 pathToTemplate :: TemplateId -> TemplateDescription -> Bindings -> String -> Aff (Maybe Template)
 pathToTemplate id description bindings path =
   map (\entity -> Template { id, description, entities: [ entity ] }) <$> pathToEntity bindings path
+
+-- | Loads a template from a filename.
+loadTemplateFromPath :: FilePath -> Aff (Either MultipleErrors Template)
+loadTemplateFromPath path = do
+  Json.readJSON <$> FileSystem.readTextFile Encoding.UTF8 path
 
 instantiateEntity :: Array (Tuple String String) -> Entity -> Array FileOutput
 instantiateEntity variables (File { path, content }) =
