@@ -23,6 +23,14 @@ instance showLoadTemplateFromGitHubError :: Show LoadTemplateFromGitHubError whe
   show (LoadTemplateGitHubFetchError e) = "LoadTemplateGitHubFetchError " <> Affjax.printError e
   show (LoadTemplateDecodingError e) = "LoadTemplateDecodingError " <> show e
 
+data InstantiationError = MissingVariables (Array TemplateVariable)
+
+derive instance genericInstantiationError :: Generic InstantiationError _
+derive instance eqInstantiationError :: Eq InstantiationError
+
+instance showInstantiationError :: Show InstantiationError where
+  show (MissingVariables variables) = "MissingVariables " <> show variables
+
 data Command
   = GenerateFromGitHub
       { source :: GitHubSource
@@ -81,10 +89,23 @@ derive instance genericTemplateDescription :: Generic TemplateDescription _
 instance showTemplateDescription :: Show TemplateDescription where
   show (TemplateDescription s) = "TemplateDescription " <> show s
 
+newtype TemplateVariable = TemplateVariable String
+
+derive newtype instance eqTemplateVariable :: Eq TemplateVariable
+derive newtype instance ordTemplateVariable :: Ord TemplateVariable
+derive newtype instance writeForeignTemplateVariable :: WriteForeign TemplateVariable
+derive newtype instance readForeignTemplateVariable :: ReadForeign TemplateVariable
+derive instance newtypeTemplateVariable :: Newtype TemplateVariable _
+derive instance genericTemplateVariable :: Generic TemplateVariable _
+
+instance showTemplateVariable :: Show TemplateVariable where
+  show (TemplateVariable s) = "TemplateVariable " <> show s
+
 newtype Template = Template
   { id :: TemplateId
   , description :: TemplateDescription
   , entities :: Array Entity
+  , variables :: Array TemplateVariable
   }
 
 derive newtype instance eqTemplate :: Eq Template

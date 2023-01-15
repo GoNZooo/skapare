@@ -108,13 +108,16 @@ main = do
               Effect.liftEffect $ Console.error $ "Error loading template: " <> show error
               Effect.liftEffect $ Process.exit 1
             Right template -> do
-              let fileOutputs = Templates.instantiate template (bindings # unwrap # Map.toUnfoldable)
-              traverse_
-                ( \(FileOutput { path: p, contents }) -> do
-                    makeParentDirectories p
-                    FileSystem.writeTextFile Encoding.UTF8 p contents
-                )
-                fileOutputs
+              case Templates.instantiate template (bindings # unwrap # Map.toUnfoldable) of
+                Right fileOutputs -> traverse_
+                  ( \(FileOutput { path: p, contents }) -> do
+                      makeParentDirectories p
+                      FileSystem.writeTextFile Encoding.UTF8 p contents
+                  )
+                  fileOutputs
+                Left error -> do
+                  Effect.liftEffect $ Console.error $ "Error instantiating template: " <> show error
+                  Effect.liftEffect $ Process.exit 1
         GenerateFromPath { path, bindings } -> Aff.launchAff_ do
           maybeTemplate <- Templates.loadTemplateFromPath path
           case maybeTemplate of
@@ -122,13 +125,16 @@ main = do
               Effect.liftEffect $ Console.error $ "Failed to load template: " <> show errors
               Effect.liftEffect $ Process.exit 1
             Right template -> do
-              let fileOutputs = Templates.instantiate template (bindings # unwrap # Map.toUnfoldable)
-              traverse_
-                ( \(FileOutput { path: p, contents }) -> do
-                    makeParentDirectories p
-                    FileSystem.writeTextFile Encoding.UTF8 p contents
-                )
-                fileOutputs
+              case Templates.instantiate template (bindings # unwrap # Map.toUnfoldable) of
+                Right fileOutputs -> traverse_
+                  ( \(FileOutput { path: p, contents }) -> do
+                      makeParentDirectories p
+                      FileSystem.writeTextFile Encoding.UTF8 p contents
+                  )
+                  fileOutputs
+                Left error -> do
+                  Effect.liftEffect $ Console.error $ "Error instantiating template: " <> show error
+                  Effect.liftEffect $ Process.exit 1
 
         Synthesize { path, id, description, bindings, outputDirectory } -> Aff.launchAff_ do
           template <- Templates.pathToTemplate id description bindings path

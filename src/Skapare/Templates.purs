@@ -1,7 +1,6 @@
 module Skapare.Templates
   ( instantiate
   , pathToTemplate
-  , pathsToTemplate
   , loadTemplateFromPath
   , loadTemplateFromGitHub
   ) where
@@ -15,12 +14,13 @@ import Data.Either (Either(..))
 import Data.Foldable (fold, foldMap)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Newtype (unwrap)
+import Data.Newtype (unwrap, wrap)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
 import Data.TemplateString as TemplateString
-import Data.Traversable (sequence, traverse)
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple)
+import Data.Tuple as Tuple
 import Data.Tuple.Nested ((/\))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -36,28 +36,43 @@ import Skapare.Types
   , Entity(..)
   , FileOutput(..)
   , GitHubSource(..)
+  , InstantiationError(..)
   , LoadTemplateFromGitHubError(..)
   , Template(..)
   , TemplateDescription
   , TemplateId
+  , TemplateVariable
   )
 
 -- | Instantiates a template with a set of variables so that it can be filled in.
-instantiate :: Template -> Array (Tuple String String) -> Array FileOutput
-instantiate (Template { entities }) variables =
-  foldMap (instantiateEntity variables) entities
+instantiate :: Template -> Array (Tuple String String) -> Either InstantiationError (Array FileOutput)
+instantiate (Template { entities, variables: expectedVariables }) variables = do
+  case missingTemplateVariables variables expectedVariables of
+    [] -> Right $ foldMap (instantiateEntity variables) entities
+    missing -> Left $ MissingVariables missing
 
--- | Turns an array of paths into a template, reading all files for all paths.
-pathsToTemplate
-  :: TemplateId -> TemplateDescription -> Bindings -> Array String -> Aff (Maybe (Array Template))
-pathsToTemplate id description bindings paths = do
-  sequence <$> traverse (pathToTemplate id description bindings) paths
+missingTemplateVariables
+  :: Array (Tuple String String) -> Array TemplateVariable -> Array TemplateVariable
+missingTemplateVariables variables expectedVariables =
+  expectedVariables
+    # map unwrap
+    # Array.filter (\v -> variables # map Tuple.fst # Array.elem v # not)
+    # map wrap
 
 -- | Turns a path into a template, reading all files for the path if it's a directory or just the
 -- | file if it's a file.
 pathToTemplate :: TemplateId -> TemplateDescription -> Bindings -> String -> Aff (Maybe Template)
 pathToTemplate id description bindings path =
-  map (\entity -> Template { id, description, entities: [ entity ] }) <$> pathToEntity bindings path
+  map
+    ( \entity ->
+        Template
+          { id
+          , description
+          , entities: [ entity ]
+          , variables: bindings # unwrap # Map.keys # Array.fromFoldable # map wrap
+          }
+    )
+    <$> pathToEntity bindings path
 
 -- | Loads a template from a filename.
 loadTemplateFromPath :: FilePath -> Aff (Either MultipleErrors Template)
