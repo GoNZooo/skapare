@@ -1,17 +1,20 @@
-module Skapa.Templates
+module Skapare.Templates
   ( instantiate
   , pathToTemplate
   , pathsToTemplate
   , loadTemplateFromPath
+  , loadTemplateFromGitHub
   ) where
 
 import Prelude
 
+import Affjax.Node as Affjax
+import Affjax.ResponseFormat as ResponseFormat
 import Data.Array as Array
-import Data.Either (Either)
+import Data.Either (Either(..))
 import Data.Foldable (fold, foldMap)
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (unwrap)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
@@ -28,10 +31,12 @@ import Node.FS.Aff as FileSystem
 import Node.FS.Stats as Stats
 import Node.Path (FilePath)
 import Simple.JSON as Json
-import Skapa.Types
+import Skapare.Types
   ( Bindings
   , Entity(..)
   , FileOutput(..)
+  , GitHubSource(..)
+  , LoadTemplateFromGitHubError(..)
   , Template(..)
   , TemplateDescription
   , TemplateId
@@ -59,17 +64,37 @@ loadTemplateFromPath :: FilePath -> Aff (Either MultipleErrors Template)
 loadTemplateFromPath path = do
   Json.readJSON <$> FileSystem.readTextFile Encoding.UTF8 path
 
+-- | Loads a template from a given GitHub user and repository.  If a repository is not specified
+-- | directly we assume `skapa-templates`.
+loadTemplateFromGitHub
+  :: GitHubSource -> TemplateId -> Aff (Either LoadTemplateFromGitHubError Template)
+loadTemplateFromGitHub (GitHubSource { user, repo }) id = do
+  let repository = fromMaybe "skapa-templates" repo
+  let
+    url = "https://raw.githubusercontent.com/" <> user <> "/" <> repository <> "/main/" <> unwrap id
+      <> ".json"
+  getResult <- Affjax.get ResponseFormat.string url
+  case getResult of
+    Left error -> pure $ Left $ LoadTemplateGitHubFetchError error
+    Right response -> do
+      let body = response.body
+      case Json.readJSON body of
+        Left error -> pure $ Left $ LoadTemplateDecodingError error
+        Right template -> pure $ Right template
+
 instantiateEntity :: Array (Tuple String String) -> Entity -> Array FileOutput
 instantiateEntity variables (File { path, content }) =
-  { path, contents: TemplateString.template content variables } # FileOutput # Array.singleton
-instantiateEntity variables (Directory { path, children }) =
-  foldMap (instantiateEntity variables) (map (prependPath path) children)
+  { path: TemplateString.template path variables
+  , contents: TemplateString.template content variables
+  } # FileOutput # Array.singleton
+instantiateEntity variables (Directory { children }) =
+  foldMap (instantiateEntity variables) children
 
-prependPath :: String -> Entity -> Entity
-prependPath path (File { path: childPath, content }) =
-  File { path: path <> "/" <> childPath, content }
-prependPath path (Directory { path: childPath, children }) =
-  Directory { path: path <> "/" <> childPath, children }
+-- prependPath :: String -> Entity -> Entity
+-- prependPath path (File { path: childPath, content }) =
+--   File { path: path <> "/" <> childPath, content }
+-- prependPath path (Directory { path: childPath, children }) =
+--   Directory { path: path <> "/" <> childPath, children }
 
 pathToEntity :: Bindings -> String -> Aff (Maybe Entity)
 pathToEntity bindings path = do
@@ -82,16 +107,21 @@ directoryToEntity bindings path
   | otherwise = do
       children <- FileSystem.readdir path
       entities <- traverse (pathToEntity bindings) (map (\p -> path <> "/" <> p) children)
-      { path, children: Array.catMaybes entities } # Directory # Just # pure
+      let replacedPath = replaceBindings bindings path
+      { path: replacedPath, children: Array.catMaybes entities } # Directory # Just # pure
 
 fileToEntity :: Bindings -> String -> Aff (Maybe Entity)
 fileToEntity bindings path = do
   buffer <- FileSystem.readFile path
   content <- buffer # Buffer.toString Encoding.UTF8 # liftEffect
   let
-    replacedContent =
-      Array.foldl
-        (\c (k /\ v) -> String.replaceAll (Pattern v) (Replacement $ fold [ "{{", k, "}}" ]) c)
-        content
-        (bindings # unwrap # Map.toUnfoldable)
-  { path, content: replacedContent } # File # Just # pure
+    replacedContent = replaceBindings bindings content
+    replacedPath = replaceBindings bindings path
+  { path: replacedPath, content: replacedContent } # File # Just # pure
+
+replaceBindings :: Bindings -> String -> String
+replaceBindings bindings content =
+  Array.foldl
+    (\c (k /\ v) -> String.replaceAll (Pattern v) (Replacement $ fold [ "${", k, "}" ]) c)
+    content
+    (bindings # unwrap # Map.toUnfoldable)

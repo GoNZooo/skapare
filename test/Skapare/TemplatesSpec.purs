@@ -1,10 +1,16 @@
-module Skapa.TemplatesSpec where
+module Skapare.TemplatesSpec where
 
 import Prelude
 
 import Data.Tuple.Nested ((/\))
-import Skapa.Templates as Template
-import Skapa.Types (Entity(..), FileOutput(..), Template(..), TemplateDescription(..), TemplateId(..))
+import Skapare.Templates as Template
+import Skapare.Types
+  ( Entity(..)
+  , FileOutput(..)
+  , Template(..)
+  , TemplateDescription(..)
+  , TemplateId(..)
+  )
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 

@@ -1,20 +1,25 @@
-module Skapa.Types where
+module Skapare.Types where
 
 import Prelude
 
+import Affjax.Node as Affjax
 import Data.Generic.Rep (class Generic)
 import Data.Map (Map)
 import Data.Maybe (Maybe)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Show.Generic (genericShow)
-import Foreign (ForeignError(..), fail)
+import Foreign (ForeignError(..), MultipleErrors, fail)
 import Node.Path (FilePath)
 import Record as Record
 import Simple.JSON (class ReadForeign, class WriteForeign, readImpl, writeImpl)
 
+data LoadTemplateFromGitHubError
+  = LoadTemplateGitHubFetchError Affjax.Error
+  | LoadTemplateDecodingError MultipleErrors
+
 data Command
   = GenerateFromGitHub
-      { source :: TemplateSource
+      { source :: GitHubSource
       , id :: TemplateId
       , bindings :: Bindings
       }
@@ -37,14 +42,13 @@ derive instance newtypeBindings :: Newtype Bindings _
 derive instance genericBindings :: Generic Bindings _
 derive newtype instance showBindings :: Show Bindings
 
--- | The source of templates we want to instantiate.
-data TemplateSource = GitHubSource { user :: String, repo :: Maybe String }
+newtype GitHubSource = GitHubSource { user :: String, repo :: Maybe String }
 
-derive instance eqTemplateSource :: Eq TemplateSource
-derive instance genericTemplateSource :: Generic TemplateSource _
-derive instance ordTemplateSource :: Ord TemplateSource
+derive instance eqTemplateSource :: Eq GitHubSource
+derive instance genericTemplateSource :: Generic GitHubSource _
+derive instance ordTemplateSource :: Ord GitHubSource
 
-instance showTemplateSource :: Show TemplateSource where
+instance showTemplateSource :: Show GitHubSource where
   show = genericShow
 
 newtype TemplateId = TemplateId String

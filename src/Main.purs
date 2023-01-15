@@ -14,11 +14,14 @@ import Data.String (Pattern(..))
 import Data.String as String
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
+import Effect.Aff (Aff)
 import Effect.Aff as Aff
 import Effect.Class as Effect
 import Effect.Console as Console
 import Node.Encoding as Encoding
 import Node.FS.Aff as FileSystem
+import Node.FS.Perms as Perms
+import Node.Path as Path
 import Node.Process as Process
 import Simple.JSON as Json
 import Skapa.Templates as Templates
@@ -28,7 +31,7 @@ import Skapa.Types
   , FileOutput(..)
   , TemplateDescription(..)
   , TemplateId(..)
-  , TemplateSource(..)
+  , GitHubSource(..)
   )
 
 parseCommand :: ArgParser Command
@@ -65,7 +68,7 @@ parseGenerate = ArgParse.choose "generate arguments"
         }
   ]
 
-parseTemplateSource :: ArgParser TemplateSource
+parseTemplateSource :: ArgParser GitHubSource
 parseTemplateSource =
   GitHubSource
     <$> ArgParse.fromRecord
@@ -112,8 +115,9 @@ main = do
             Right template -> do
               let fileOutputs = Templates.instantiate template (bindings # unwrap # Map.toUnfoldable)
               traverse_
-                ( \(FileOutput { path: p, contents }) -> FileSystem.writeTextFile Encoding.UTF8 p
-                    contents
+                ( \(FileOutput { path: p, contents }) -> do
+                    makeParentDirectories p
+                    FileSystem.writeTextFile Encoding.UTF8 p contents
                 )
                 fileOutputs
 
@@ -121,3 +125,9 @@ main = do
           template <- Templates.pathToTemplate id description bindings path
           let filename = fromMaybe "." outputDirectory <> "/" <> (unwrap id) <> ".json"
           FileSystem.writeTextFile (Encoding.UTF8) filename (Json.writeJSON template)
+
+makeParentDirectories :: String -> Aff Unit
+makeParentDirectories path = FileSystem.mkdir' (Path.dirname path) { recursive: true, mode }
+  where
+  mode = Perms.mkPerms full Perms.none Perms.none
+  full = Perms.read + Perms.write + Perms.execute
