@@ -24,8 +24,8 @@ import Node.FS.Perms as Perms
 import Node.Path as Path
 import Node.Process as Process
 import Simple.JSON as Json
-import Skapa.Templates as Templates
-import Skapa.Types
+import Skapare.Templates as Templates
+import Skapare.Types
   ( Bindings(..)
   , Command(..)
   , FileOutput(..)
@@ -101,11 +101,20 @@ main = do
       Process.exit 1
     Right command -> do
       case command of
-        GenerateFromGitHub { source, id, bindings } -> do
-          Console.log $ "Creating a new project from a template from " <> show source <> " with id "
-            <> show id
-            <> " and bindings "
-            <> show bindings
+        GenerateFromGitHub { source, id, bindings } -> Aff.launchAff_ do
+          maybeTemplate <- Templates.loadTemplateFromGitHub source id
+          case maybeTemplate of
+            Left error -> do
+              Effect.liftEffect $ Console.error $ "Error loading template: " <> show error
+              Effect.liftEffect $ Process.exit 1
+            Right template -> do
+              let fileOutputs = Templates.instantiate template (bindings # unwrap # Map.toUnfoldable)
+              traverse_
+                ( \(FileOutput { path: p, contents }) -> do
+                    makeParentDirectories p
+                    FileSystem.writeTextFile Encoding.UTF8 p contents
+                )
+                fileOutputs
         GenerateFromPath { path, bindings } -> Aff.launchAff_ do
           maybeTemplate <- Templates.loadTemplateFromPath path
           case maybeTemplate of

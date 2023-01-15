@@ -4,7 +4,7 @@ import Prelude
 
 import Effect (Effect)
 import Effect.Aff (launchAff_)
-import Skapa.TemplatesSpec as TemplatesSpec
+import Skapare.TemplatesSpec as TemplatesSpec
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner (runSpec)
 

@@ -65,11 +65,11 @@ loadTemplateFromPath path = do
   Json.readJSON <$> FileSystem.readTextFile Encoding.UTF8 path
 
 -- | Loads a template from a given GitHub user and repository.  If a repository is not specified
--- | directly we assume `skapa-templates`.
+-- | directly we assume `skapare-templates`.
 loadTemplateFromGitHub
   :: GitHubSource -> TemplateId -> Aff (Either LoadTemplateFromGitHubError Template)
 loadTemplateFromGitHub (GitHubSource { user, repo }) id = do
-  let repository = fromMaybe "skapa-templates" repo
+  let repository = fromMaybe "skapare-templates" repo
   let
     url = "https://raw.githubusercontent.com/" <> user <> "/" <> repository <> "/main/" <> unwrap id
       <> ".json"
@@ -89,12 +89,6 @@ instantiateEntity variables (File { path, content }) =
   } # FileOutput # Array.singleton
 instantiateEntity variables (Directory { children }) =
   foldMap (instantiateEntity variables) children
-
--- prependPath :: String -> Entity -> Entity
--- prependPath path (File { path: childPath, content }) =
---   File { path: path <> "/" <> childPath, content }
--- prependPath path (Directory { path: childPath, children }) =
---   Directory { path: path <> "/" <> childPath, children }
 
 pathToEntity :: Bindings -> String -> Aff (Maybe Entity)
 pathToEntity bindings path = do

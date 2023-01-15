@@ -1,5 +1,5 @@
 #!/usr/bin/env node
 
-const app = require("./app.js");
+const app = require("./output/Main");
 
 app.main();

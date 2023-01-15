@@ -17,6 +17,12 @@ data LoadTemplateFromGitHubError
   = LoadTemplateGitHubFetchError Affjax.Error
   | LoadTemplateDecodingError MultipleErrors
 
+derive instance genericLoadTemplateFromGitHubError :: Generic LoadTemplateFromGitHubError _
+
+instance showLoadTemplateFromGitHubError :: Show LoadTemplateFromGitHubError where
+  show (LoadTemplateGitHubFetchError e) = "LoadTemplateGitHubFetchError " <> Affjax.printError e
+  show (LoadTemplateDecodingError e) = "LoadTemplateDecodingError " <> show e
+
 data Command
   = GenerateFromGitHub
       { source :: GitHubSource
