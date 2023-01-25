@@ -12,6 +12,8 @@ import Affjax.ResponseFormat as ResponseFormat
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (fold, foldMap)
+import Data.List (filterM)
+import Data.List as List
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (unwrap, wrap)
@@ -29,6 +31,7 @@ import Node.Buffer as Buffer
 import Node.Encoding as Encoding
 import Node.FS.Aff as FileSystem
 import Node.FS.Stats as Stats
+import Node.FS.Sync as FileSystemSync
 import Node.Path (FilePath)
 import Simple.JSON as Json
 import Skapare.Types
@@ -108,16 +111,27 @@ instantiateEntity variables (Directory { children }) =
 pathToEntity :: Bindings -> String -> Aff (Maybe Entity)
 pathToEntity bindings path = do
   stats <- FileSystem.stat path
-  if Stats.isDirectory stats then directoryToEntity bindings path else fileToEntity bindings path
+  let
+    isSymbolicLink = Stats.isSymbolicLink stats
+    isDirectory = Stats.isDirectory stats
+  case isSymbolicLink, isDirectory of
+    true, _ -> pure Nothing
+    _, true -> directoryToEntity bindings path
+    _, _ -> fileToEntity bindings path
 
 directoryToEntity :: Bindings -> String -> Aff (Maybe Entity)
-directoryToEntity bindings path
-  | String.contains (Pattern ".git") path = pure Nothing
-  | otherwise = do
-      children <- FileSystem.readdir path
-      entities <- traverse (pathToEntity bindings) (map (\p -> path <> "/" <> p) children)
-      let replacedPath = replaceBindings bindings path
-      { path: replacedPath, children: Array.catMaybes entities } # Directory # Just # pure
+directoryToEntity bindings path = do
+  ignorePatterns <- readIgnoreFile path
+  children <- map (\p -> path <> "/" <> p) <$> FileSystem.readdir path
+  validFiles <-
+    children
+      # List.fromFoldable
+      # filterM isNotSymbolicLink
+      # map (List.filter (isIgnored ignorePatterns >>> not))
+      # map Array.fromFoldable
+  entities <- traverse (pathToEntity bindings) validFiles
+  let replacedPath = replaceBindings bindings path
+  { path: replacedPath, children: Array.catMaybes entities } # Directory # Just # pure
 
 fileToEntity :: Bindings -> String -> Aff (Maybe Entity)
 fileToEntity bindings path = do
@@ -134,3 +148,20 @@ replaceBindings bindings content =
     (\c (k /\ v) -> String.replaceAll (Pattern v) (Replacement $ fold [ "${", k, "}" ]) c)
     content
     (bindings # unwrap # Map.toUnfoldable)
+
+isNotSymbolicLink :: String -> Aff Boolean
+isNotSymbolicLink path = do
+  stats <- FileSystem.stat path
+  stats # Stats.isSymbolicLink # not # pure
+
+isIgnored :: Array String -> String -> Boolean
+isIgnored ignorePatterns path =
+  ignorePatterns # Array.any (\p -> String.contains (Pattern p) path)
+
+readIgnoreFile :: String -> Aff (Array String)
+readIgnoreFile path = do
+  hasIgnoreFile <- liftEffect $ FileSystemSync.exists (path <> "/.skapareignore")
+  if hasIgnoreFile then do
+    (String.split (Pattern "\n") >>> Array.filter (_ /= "")) <$>
+      FileSystem.readTextFile Encoding.UTF8 (path <> "/.skapareignore")
+  else pure []
