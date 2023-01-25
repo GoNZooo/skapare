@@ -33,6 +33,8 @@ import Node.FS.Aff as FileSystem
 import Node.FS.Stats as Stats
 import Node.FS.Sync as FileSystemSync
 import Node.Path (FilePath)
+import Node.Path as Path
+import Node.Process as Process
 import Simple.JSON as Json
 import Skapare.Types
   ( Bindings
@@ -65,7 +67,9 @@ missingTemplateVariables variables expectedVariables =
 -- | Turns a path into a template, reading all files for the path if it's a directory or just the
 -- | file if it's a file.
 pathToTemplate :: TemplateId -> TemplateDescription -> Bindings -> String -> Aff (Maybe Template)
-pathToTemplate id description bindings path =
+pathToTemplate id description bindings path = do
+  currentDirectory <- liftEffect Process.cwd
+  let relativePath = Path.relative currentDirectory path
   map
     ( \entity ->
         Template
@@ -75,7 +79,7 @@ pathToTemplate id description bindings path =
           , variables: bindings # unwrap # Map.keys # Array.fromFoldable # map wrap
           }
     )
-    <$> pathToEntity bindings path
+    <$> pathToEntity bindings relativePath
 
 -- | Loads a template from a filename.
 loadTemplateFromPath :: FilePath -> Aff (Either MultipleErrors Template)
@@ -89,8 +93,16 @@ loadTemplateFromGitHub
 loadTemplateFromGitHub (GitHubSource { user, repo }) id = do
   let repository = fromMaybe "skapare-templates" repo
   let
-    url = "https://raw.githubusercontent.com/" <> user <> "/" <> repository <> "/main/" <> unwrap id
-      <> ".json"
+    url =
+      fold
+        [ "https://raw.githubusercontent.com/"
+        , user
+        , "/"
+        , repository
+        , "/main/"
+        , unwrap id
+        , ".json"
+        ]
   getResult <- Affjax.get ResponseFormat.string url
   case getResult of
     Left error -> pure $ Left $ LoadTemplateGitHubFetchError error
