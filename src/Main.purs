@@ -42,13 +42,13 @@ parseCommand =
     , ArgParse.command [ "synthesize", "s" ] "Synthesize a template from a file/directory" do
         Synthesize
           <$> ArgParse.fromRecord
-            { path: ArgParse.argument [ "-p", "-path" ] "Path to file/directory"
-            , id: TemplateId <$> ArgParse.argument [ "-i", "-id" ] "Template name/ID"
-            , description: TemplateDescription <$> ArgParse.argument [ "-d", "-description" ]
+            { path: ArgParse.argument [ "-p", "--path" ] "Path to file/directory"
+            , id: TemplateId <$> ArgParse.argument [ "-i", "--id" ] "Template name/ID"
+            , description: TemplateDescription <$> ArgParse.argument [ "-d", "--description" ]
                 "Template description"
             , bindings: parseBindings
             , outputDirectory: ArgParse.optional
-                (ArgParse.argument [ "-o", "-output" ] "Output directory")
+                (ArgParse.argument [ "-o", "--output" ] "Output directory")
             }
           <* ArgParse.flagHelp
     ]
@@ -58,12 +58,12 @@ parseGenerate = ArgParse.choose "generate arguments"
   [ GenerateFromGitHub
       <$> ArgParse.fromRecord
         { source: parseTemplateSource
-        , id: TemplateId <$> ArgParse.argument [ "-i", "-id" ] "Template name/ID"
+        , id: TemplateId <$> ArgParse.argument [ "-i", "--id" ] "Template name/ID"
         , bindings: parseBindings
         }
   , GenerateFromPath
       <$> ArgParse.fromRecord
-        { path: ArgParse.argument [ "-p", "-path" ] "Path to template"
+        { path: ArgParse.argument [ "-p", "--path" ] "Path to template"
         , bindings: parseBindings
         }
   ]
