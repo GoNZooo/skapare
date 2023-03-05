@@ -17,6 +17,7 @@ to generate this file without the comments in this block.
   , "affjax-node"
   , "argparse-basic"
   , "arrays"
+  , "bifunctors"
   , "console"
   , "control"
   , "effect"
@@ -38,6 +39,7 @@ to generate this file without the comments in this block.
   , "simple-json"
   , "spec"
   , "strings"
+  , "stringutils"
   , "template-strings"
   , "tuples"
   ]

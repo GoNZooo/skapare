@@ -13,22 +13,58 @@ import Node.Path (FilePath)
 import Record as Record
 import Simple.JSON (class ReadForeign, class WriteForeign, readImpl, writeImpl)
 
+newtype GitHubTreeResponse = GitHubTreeResponse
+  { tree :: Array GitHubTreeItem
+  }
+
+derive instance Generic GitHubTreeResponse _
+derive instance Eq GitHubTreeResponse
+
+instance Show GitHubTreeResponse where
+  show = genericShow
+
+instance ReadForeign GitHubTreeResponse where
+  readImpl f = GitHubTreeResponse <$> readImpl f
+
+newtype GitHubTreeItem = GitHubTreeItem
+  { path :: String
+  }
+
+derive instance Generic GitHubTreeItem _
+derive instance Eq GitHubTreeItem
+
+instance Show GitHubTreeItem where
+  show = genericShow
+
+instance ReadForeign GitHubTreeItem where
+  readImpl f = GitHubTreeItem <$> readImpl f
+
+data ListTemplatesInGitHubError
+  = ListTemplatesGitHubFetchError Affjax.Error
+  | ListTemplatesDecodingError MultipleErrors
+
+derive instance Generic ListTemplatesInGitHubError _
+
+instance Show ListTemplatesInGitHubError where
+  show (ListTemplatesGitHubFetchError e) = "ListTemplatesGitHubFetchError " <> Affjax.printError e
+  show (ListTemplatesDecodingError e) = "ListTemplatesDecodingError " <> show e
+
 data LoadTemplateFromGitHubError
   = LoadTemplateGitHubFetchError Affjax.Error
   | LoadTemplateDecodingError MultipleErrors
 
-derive instance genericLoadTemplateFromGitHubError :: Generic LoadTemplateFromGitHubError _
+derive instance Generic LoadTemplateFromGitHubError _
 
-instance showLoadTemplateFromGitHubError :: Show LoadTemplateFromGitHubError where
+instance Show LoadTemplateFromGitHubError where
   show (LoadTemplateGitHubFetchError e) = "LoadTemplateGitHubFetchError " <> Affjax.printError e
   show (LoadTemplateDecodingError e) = "LoadTemplateDecodingError " <> show e
 
 data InstantiationError = MissingVariables (Array TemplateVariable)
 
-derive instance genericInstantiationError :: Generic InstantiationError _
-derive instance eqInstantiationError :: Eq InstantiationError
+derive instance Generic InstantiationError _
+derive instance Eq InstantiationError
 
-instance showInstantiationError :: Show InstantiationError where
+instance Show InstantiationError where
   show (MissingVariables variables) = "MissingVariables " <> show variables
 
 data Command
@@ -48,6 +84,7 @@ data Command
       , bindings :: Bindings
       , outputDirectory :: Maybe FilePath
       }
+  | ListTemplates { source :: GitHubSource }
 
 newtype Bindings = Bindings (Map String String)
 

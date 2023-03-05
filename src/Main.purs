@@ -51,6 +51,12 @@ parseCommand =
                 (ArgParse.argument [ "-o", "--output" ] "Output directory")
             }
           <* ArgParse.flagHelp
+    , ArgParse.command [ "list", "l" ] "List available templates in repository" do
+        ListTemplates
+          <$> ArgParse.fromRecord
+            { source: parseTemplateSource
+            }
+          <* ArgParse.flagHelp
     ]
 
 parseGenerate :: ArgParser Command
@@ -140,6 +146,15 @@ main = do
           template <- Templates.pathToTemplate id description bindings path
           let filename = fromMaybe "." outputDirectory <> "/" <> (unwrap id) <> ".json"
           FileSystem.writeTextFile (Encoding.UTF8) filename (Json.writeJSON template)
+
+        ListTemplates { source } -> Aff.launchAff_ do
+          maybeTemplates <- Templates.listTemplatesInGitHub source
+          case maybeTemplates of
+            Left error -> do
+              Effect.liftEffect $ Console.error $ "Error listing templates: " <> show error
+              Effect.liftEffect $ Process.exit 1
+            Right templateNames -> do
+              templateNames # traverse_ (unwrap >>> Console.log) # Effect.liftEffect
 
 makeParentDirectories :: String -> Aff Unit
 makeParentDirectories path = FileSystem.mkdir' (Path.dirname path) { recursive: true, mode }

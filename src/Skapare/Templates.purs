@@ -3,6 +3,7 @@ module Skapare.Templates
   , pathToTemplate
   , loadTemplateFromPath
   , loadTemplateFromGitHub
+  , listTemplatesInGitHub
   ) where
 
 import Prelude
@@ -10,6 +11,7 @@ import Prelude
 import Affjax.Node as Affjax
 import Affjax.ResponseFormat as ResponseFormat
 import Data.Array as Array
+import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Foldable (fold, foldMap)
 import Data.List (filterM)
@@ -19,6 +21,7 @@ import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (unwrap, wrap)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
+import Data.String.Utils as StringUtils
 import Data.TemplateString as TemplateString
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple)
@@ -41,13 +44,40 @@ import Skapare.Types
   , Entity(..)
   , FileOutput(..)
   , GitHubSource(..)
+  , GitHubTreeItem(..)
+  , GitHubTreeResponse(..)
   , InstantiationError(..)
+  , ListTemplatesInGitHubError(..)
   , LoadTemplateFromGitHubError(..)
   , Template(..)
   , TemplateDescription
   , TemplateId
   , TemplateVariable
   )
+
+-- | Lists template in a GitHub repository
+listTemplatesInGitHub :: GitHubSource -> Aff (Either ListTemplatesInGitHubError (Array TemplateId))
+listTemplatesInGitHub (GitHubSource { user, repo: maybeRepo }) = do
+  let
+    repo = fromMaybe "skapare-templates" maybeRepo
+    url = "https://api.github.com/repos/" <> user <> "/" <> repo <> "/git/trees/main"
+  response <- lmap ListTemplatesGitHubFetchError <$> Affjax.get ResponseFormat.string url
+  case response of
+    Left error -> pure $ Left error
+    Right r -> do
+      let body = r.body
+      case Json.readJSON body of
+        Left error -> pure $ Left $ ListTemplatesDecodingError error
+        Right (GitHubTreeResponse { tree }) -> do
+          let
+            templates =
+              tree
+                # Array.filter (\(GitHubTreeItem { path }) -> StringUtils.endsWith ".json" path)
+                # map
+                    ( \(GitHubTreeItem { path }) ->
+                        path # String.take (String.length path - 5) # wrap
+                    )
+          pure $ Right templates
 
 -- | Instantiates a template with a set of variables so that it can be filled in.
 instantiate :: Template -> Array (Tuple String String) -> Either InstantiationError (Array FileOutput)
