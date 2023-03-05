@@ -19,7 +19,6 @@ to generate this file without the comments in this block.
   , "arrays"
   , "bifunctors"
   , "console"
-  , "control"
   , "effect"
   , "either"
   , "foldable-traversable"
