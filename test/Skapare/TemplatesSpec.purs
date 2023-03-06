@@ -14,8 +14,10 @@ import Skapare.Types
   , TemplateDescription(..)
   , TemplateId(..)
   )
+import Test.QuickCheck ((===))
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
+import Test.Spec.QuickCheck (quickCheck)
 
 spec :: Spec Unit
 spec = do
@@ -34,6 +36,11 @@ spec = do
       Template.instantiate template [ "value" /\ "test" ] `shouldEqual`
         Right
           [ FileOutput { path: "path", contents: "This is a templated value: test" }
+          ]
+
+      quickCheck \(value :: String) -> do
+        Template.instantiate template [ "value" /\ value ] === Right
+          [ FileOutput { path: "path", contents: "This is a templated value: " <> value }
           ]
 
     it "should be able to instantiate a directory of file entities" do
@@ -95,3 +102,4 @@ spec = do
           ]
       Template.instantiate template [] `shouldEqual`
         Left (MissingVariables [ wrap "value" ])
+

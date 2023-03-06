@@ -37,6 +37,7 @@ to generate this file without the comments in this block.
   , "record"
   , "simple-json"
   , "spec"
+  , "spec-quickcheck"
   , "strings"
   , "stringutils"
   , "template-strings"
