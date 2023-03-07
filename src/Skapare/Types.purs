@@ -28,6 +28,7 @@ instance ReadForeign GitHubTreeResponse where
 
 newtype GitHubTreeItem = GitHubTreeItem
   { path :: String
+  , sha :: String
   }
 
 derive instance Generic GitHubTreeItem _

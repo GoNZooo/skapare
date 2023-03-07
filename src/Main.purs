@@ -2,6 +2,7 @@ module Main where
 
 import Prelude
 
+import Affjax as Affjax
 import ArgParse.Basic (ArgParser)
 import ArgParse.Basic as ArgParse
 import Data.Array as Array
@@ -17,7 +18,8 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Aff as Aff
 import Effect.Class as Effect
-import Effect.Console as Console
+import Effect.Class.Console as Console
+import Effect.Exception as Exception
 import Node.Encoding as Encoding
 import Node.FS.Aff as FileSystem
 import Node.FS.Perms as Perms
@@ -33,6 +35,7 @@ import Skapare.Types
   , TemplateId(..)
   , GitHubSource(..)
   )
+import Yoga.Om as Om
 
 parseCommand :: ArgParser Command
 parseCommand =
@@ -147,14 +150,16 @@ main = do
           let filename = fromMaybe "." outputDirectory <> "/" <> (unwrap id) <> ".json"
           FileSystem.writeTextFile (Encoding.UTF8) filename (Json.writeJSON template)
 
-        ListTemplates { source } -> Aff.launchAff_ do
-          maybeTemplates <- Templates.listTemplatesInGitHub source
-          case maybeTemplates of
-            Left error -> do
-              Effect.liftEffect $ Console.error $ "Error listing templates: " <> show error
-              Effect.liftEffect $ Process.exit 1
-            Right templateNames -> do
-              templateNames # traverse_ (unwrap >>> Console.log) # Effect.liftEffect
+        ListTemplates { source } -> do
+          let
+            handlers =
+              { getError: \e -> e # Affjax.printError # Console.error
+              , decodeError: \e -> e # show # Console.error
+              , exception: \e -> e # Exception.message # Console.error
+              }
+          Om.launchOm_ {} handlers do
+            templateNames <- Templates.listTemplatesInGitHub source
+            templateNames # traverse_ (unwrap >>> Console.log) # Effect.liftEffect
 
 makeParentDirectories :: String -> Aff Unit
 makeParentDirectories path = FileSystem.mkdir' (Path.dirname path) { recursive: true, mode }

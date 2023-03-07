@@ -21,6 +21,7 @@ to generate this file without the comments in this block.
   , "console"
   , "effect"
   , "either"
+  , "exceptions"
   , "foldable-traversable"
   , "foreign"
   , "lists"
@@ -42,6 +43,7 @@ to generate this file without the comments in this block.
   , "stringutils"
   , "template-strings"
   , "tuples"
+  , "yoga-om"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs", "test/**/*.purs" ]

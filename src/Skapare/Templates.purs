@@ -11,7 +11,6 @@ import Prelude
 import Affjax.Node as Affjax
 import Affjax.ResponseFormat as ResponseFormat
 import Data.Array as Array
-import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Foldable (fold, foldMap)
 import Data.List (filterM)
@@ -39,6 +38,7 @@ import Node.Path (FilePath)
 import Node.Path as Path
 import Node.Process as Process
 import Simple.JSON as Json
+import Skapare.GitHub as GitHub
 import Skapare.Types
   ( Bindings
   , Entity(..)
@@ -47,37 +47,28 @@ import Skapare.Types
   , GitHubTreeItem(..)
   , GitHubTreeResponse(..)
   , InstantiationError(..)
-  , ListTemplatesInGitHubError(..)
   , LoadTemplateFromGitHubError(..)
   , Template(..)
   , TemplateDescription
   , TemplateId
   , TemplateVariable
   )
+import Yoga.Om (Om)
 
 -- | Lists template in a GitHub repository
-listTemplatesInGitHub :: GitHubSource -> Aff (Either ListTemplatesInGitHubError (Array TemplateId))
-listTemplatesInGitHub (GitHubSource { user, repo: maybeRepo }) = do
-  let
-    repo = fromMaybe "skapare-templates" maybeRepo
-    url = "https://api.github.com/repos/" <> user <> "/" <> repo <> "/git/trees/main"
-  response <- lmap ListTemplatesGitHubFetchError <$> Affjax.get ResponseFormat.string url
-  case response of
-    Left error -> pure $ Left error
-    Right r -> do
-      let body = r.body
-      case Json.readJSON body of
-        Left error -> pure $ Left $ ListTemplatesDecodingError error
-        Right (GitHubTreeResponse { tree }) -> do
-          let
-            templates =
-              tree
-                # Array.filter (\(GitHubTreeItem { path }) -> StringUtils.endsWith ".json" path)
-                # map
-                    ( \(GitHubTreeItem { path }) ->
-                        path # String.take (String.length path - 5) # wrap
-                    )
-          pure $ Right templates
+listTemplatesInGitHub
+  :: forall ctx errors
+   . GitHubSource
+  -> Om (| ctx) (getError :: Affjax.Error, decodeError :: MultipleErrors | errors) (Array TemplateId)
+listTemplatesInGitHub source = do
+  GitHubTreeResponse { tree } <- GitHub.getTree source
+  tree
+    # Array.filter (\(GitHubTreeItem { path }) -> StringUtils.endsWith ".json" path)
+    # map
+        ( \(GitHubTreeItem { path }) ->
+            path # String.take (String.length path - 5) # wrap
+        )
+    # pure
 
 -- | Instantiates a template with a set of variables so that it can be filled in.
 instantiate :: Template -> Array (Tuple String String) -> Either InstantiationError (Array FileOutput)

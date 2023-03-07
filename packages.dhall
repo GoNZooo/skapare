@@ -99,12 +99,15 @@ in  upstream
 -------------------------------
 -}
 let upstream =
-      https://github.com/purescript/package-sets/releases/download/psc-0.15.3-20220712/packages.dhall
-        sha256:ffc496e19c93f211b990f52e63e8c16f31273d4369dbae37c7cf6ea852d4442f
+      https://github.com/purescript/package-sets/releases/download/psc-0.15.7-20230306/packages.dhall
+        sha256:0757626c7422b8b5b5b1d0df3d3628e5deac755d7f89c433a9bf89009787dcbd
 
-in  upstream
-  with template-strings =
-    { dependencies = [ "functions", "tuples" ]
-    , repo = "https://github.com/GoNZooo/purescript-template-strings.git"
-    , version = "es6-module-change.gonz"
-    }
+let overrides =
+      { template-strings =
+        { dependencies = [ "functions", "tuples" ]
+        , repo = "https://github.com/GoNZooo/purescript-template-strings.git"
+        , version = "es6-module-change.gonz"
+        }
+      }
+
+in  upstream // overrides
