@@ -13,6 +13,11 @@ import Node.Path (FilePath)
 import Record as Record
 import Simple.JSON (class ReadForeign, class WriteForeign, readImpl, writeImpl)
 
+type JsonDecodingError e =
+  ( jsonDecodingError :: MultipleErrors
+  | e
+  )
+
 newtype GitHubTreeResponse = GitHubTreeResponse
   { tree :: Array GitHubTreeItem
   }

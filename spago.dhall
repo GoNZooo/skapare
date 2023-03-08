@@ -17,11 +17,9 @@ to generate this file without the comments in this block.
   , "affjax-node"
   , "argparse-basic"
   , "arrays"
-  , "bifunctors"
   , "console"
   , "effect"
   , "either"
-  , "exceptions"
   , "foldable-traversable"
   , "foreign"
   , "lists"
@@ -43,6 +41,7 @@ to generate this file without the comments in this block.
   , "stringutils"
   , "template-strings"
   , "tuples"
+  , "typelevel-prelude"
   , "yoga-om"
   ]
 , packages = ./packages.dhall

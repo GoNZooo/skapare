@@ -27,8 +27,8 @@ import Data.Tuple (Tuple)
 import Data.Tuple as Tuple
 import Data.Tuple.Nested ((/\))
 import Effect.Aff (Aff)
+import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
-import Foreign (MultipleErrors)
 import Node.Buffer as Buffer
 import Node.Encoding as Encoding
 import Node.FS.Aff as FileSystem
@@ -46,14 +46,16 @@ import Skapare.Types
   , GitHubSource(..)
   , GitHubTreeItem(..)
   , GitHubTreeResponse(..)
-  , InstantiationError(..)
-  , LoadTemplateFromGitHubError(..)
+  , JsonDecodingError
   , Template(..)
   , TemplateDescription
   , TemplateId
   , TemplateVariable
   )
+import Skapare.Utilities as Utilities
+import Type.Row (type (+))
 import Yoga.Om (Om)
+import Yoga.Om as Om
 
 -- | Lists template in a GitHub repository
 listTemplatesInGitHub
@@ -69,11 +71,12 @@ listTemplatesInGitHub source = do
     # pure
 
 -- | Instantiates a template with a set of variables so that it can be filled in.
-instantiate :: Template -> Array (Tuple String String) -> Either InstantiationError (Array FileOutput)
+instantiate
+  :: Template -> Array (Tuple String String) -> Either (Array TemplateVariable) (Array FileOutput)
 instantiate (Template { entities, variables: expectedVariables }) variables = do
   case missingTemplateVariables variables expectedVariables of
     [] -> Right $ foldMap (instantiateEntity variables) entities
-    missing -> Left $ MissingVariables missing
+    missing -> Left missing
 
 missingTemplateVariables
   :: Array (Tuple String String) -> Array TemplateVariable -> Array TemplateVariable
@@ -85,7 +88,13 @@ missingTemplateVariables variables expectedVariables =
 
 -- | Turns a path into a template, reading all files for the path if it's a directory or just the
 -- | file if it's a file.
-pathToTemplate :: TemplateId -> TemplateDescription -> Bindings -> String -> Aff (Maybe Template)
+pathToTemplate
+  :: forall ctx e
+   . TemplateId
+  -> TemplateDescription
+  -> Bindings
+  -> String
+  -> Om (| ctx) (PathToEntityErrors + e) (Maybe Template)
 pathToTemplate id description bindings path = do
   currentDirectory <- liftEffect Process.cwd
   let relativePath = Path.relative currentDirectory path
@@ -100,18 +109,29 @@ pathToTemplate id description bindings path = do
     )
     <$> pathToEntity bindings relativePath
 
+type LoadTemplateFromPathError e = JsonDecodingError + e
+
 -- | Loads a template from a filename.
-loadTemplateFromPath :: FilePath -> Aff (Either MultipleErrors Template)
+loadTemplateFromPath
+  :: forall ctx e
+   . FilePath
+  -> Om (| ctx) (LoadTemplateFromPathError + e) Template
 loadTemplateFromPath path = do
-  Json.readJSON <$> FileSystem.readTextFile Encoding.UTF8 path
+  maybeTemplate <- Json.readJSON <$> (path # FileSystem.readTextFile Encoding.UTF8 # liftAff)
+  Om.throwLeftAs (\jsonDecodingError -> Om.error { jsonDecodingError }) maybeTemplate
+
+type LoadTemplateFromGitHubErrors e = GitHub.GetTreeErrors + e
 
 -- | Loads a template from a given GitHub user and repository.  If a repository is not specified
 -- | directly we assume `skapare-templates`.
 loadTemplateFromGitHub
-  :: GitHubSource -> TemplateId -> Aff (Either LoadTemplateFromGitHubError Template)
-loadTemplateFromGitHub (GitHubSource { user, repo }) id = do
-  let repository = fromMaybe "skapare-templates" repo
+  :: forall ctx e
+   . GitHubSource
+  -> TemplateId
+  -> Om (| ctx) (LoadTemplateFromGitHubErrors + e) Template
+loadTemplateFromGitHub source@(GitHubSource { user, repo }) id = do
   let
+    repository = fromMaybe "skapare-templates" repo
     url =
       fold
         [ "https://raw.githubusercontent.com/"
@@ -122,14 +142,13 @@ loadTemplateFromGitHub (GitHubSource { user, repo }) id = do
         , unwrap id
         , ".json"
         ]
-  getResult <- Affjax.get ResponseFormat.string url
-  case getResult of
-    Left error -> pure $ Left $ LoadTemplateGitHubFetchError error
-    Right response -> do
-      let body = response.body
-      case Json.readJSON body of
-        Left error -> pure $ Left $ LoadTemplateDecodingError error
-        Right template -> pure $ Right template
+  maybeResponse <- url # Affjax.get ResponseFormat.string # liftAff
+  when (Utilities.getResponseStatusCode maybeResponse == Just (wrap 404)) do
+    Om.throw { repositoryNotFound: source }
+  response <- Om.throwLeftAs (\gitHubApiError -> Om.error { gitHubApiError }) maybeResponse
+  response.body
+    # Json.readJSON
+    # Om.throwLeftAs (\jsonDecodingError -> Om.error { jsonDecodingError })
 
 instantiateEntity :: Array (Tuple String String) -> Entity -> Array FileOutput
 instantiateEntity variables (File { path, content }) =
@@ -139,25 +158,32 @@ instantiateEntity variables (File { path, content }) =
 instantiateEntity variables (Directory { children }) =
   foldMap (instantiateEntity variables) children
 
-pathToEntity :: Bindings -> String -> Aff (Maybe Entity)
+type PathToEntityErrors e = StatError + IsSymbolicLinkError + e
+
+type IsSymbolicLinkError e = (isSymbolicLinkError :: String | e)
+
+type StatError e = (statError :: String | e)
+
+pathToEntity :: forall ctx e. Bindings -> String -> Om (| ctx) (PathToEntityErrors + e) (Maybe Entity)
 pathToEntity bindings path = do
-  stats <- FileSystem.stat path
+  stats <- path # FileSystem.stat # liftAff -- # Aff.catchError (\e -> Om.throw { statError: path })
   let
     isSymbolicLink = Stats.isSymbolicLink stats
     isDirectory = Stats.isDirectory stats
   case isSymbolicLink, isDirectory of
-    true, _ -> pure Nothing
+    true, _ -> Om.throw { isSymbolicLinkError: path }
     _, true -> directoryToEntity bindings path
-    _, _ -> fileToEntity bindings path
+    _, _ -> liftAff $ fileToEntity bindings path
 
-directoryToEntity :: Bindings -> String -> Aff (Maybe Entity)
+directoryToEntity
+  :: forall ctx e. Bindings -> String -> Om (| ctx) (PathToEntityErrors + e) (Maybe Entity)
 directoryToEntity bindings path = do
-  ignorePatterns <- readIgnoreFile path
-  children <- map (\p -> path <> "/" <> p) <$> FileSystem.readdir path
+  ignorePatterns <- path # readIgnoreFile # liftAff
+  children <- map (\p -> path <> "/" <> p) <$> (path # FileSystem.readdir # liftAff)
   validFiles <-
     children
       # List.fromFoldable
-      # filterM isNotSymbolicLink
+      # filterM (isNotSymbolicLink >>> liftAff)
       # map (List.filter (isIgnored ignorePatterns >>> not))
       # map Array.fromFoldable
   entities <- traverse (pathToEntity bindings) validFiles

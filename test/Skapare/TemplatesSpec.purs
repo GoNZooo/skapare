@@ -9,7 +9,6 @@ import Skapare.Templates as Template
 import Skapare.Types
   ( Entity(..)
   , FileOutput(..)
-  , InstantiationError(..)
   , Template(..)
   , TemplateDescription(..)
   , TemplateId(..)
@@ -101,5 +100,5 @@ spec = do
           [ File { path: "path", content: "This is a templated value: ${value}" }
           ]
       Template.instantiate template [] `shouldEqual`
-        Left (MissingVariables [ wrap "value" ])
+        Left [ wrap "value" ]
 

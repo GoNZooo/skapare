@@ -6,7 +6,6 @@ import Affjax as Affjax
 import ArgParse.Basic (ArgParser)
 import ArgParse.Basic as ArgParse
 import Data.Array as Array
-import Data.Either (Either(..))
 import Data.Foldable (traverse_)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
@@ -16,7 +15,7 @@ import Data.String as String
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (Aff)
-import Effect.Aff as Aff
+import Effect.Aff.Class (liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console as Console
 import Node.Encoding as Encoding
@@ -111,8 +110,26 @@ main = do
           [ "Repository not found: ", show gitHubSource ]
             # Array.fold
             # exitWith 1
-      , gitHubDecodeError: \e -> do
-          [ "Unable to decode GitHub response data: ", show e ]
+      , jsonDecodingError: \e -> do
+          [ "Unable to decode JSON data: ", show e ]
+            # Array.fold
+            # exitWith 1
+      , missingVariables: \variables -> do
+          [ "Missing variables for template instantiation: "
+          , variables # map unwrap # Array.intercalate ", "
+          ]
+            # Array.fold
+            # exitWith 1
+      , isSymbolicLinkError: \path -> do
+          [ "Found symbolic link in template usage: ", path ]
+            # Array.fold
+            # exitWith 1
+      , statError: \path -> do
+          [ "Unable to stat file: ", path ]
+            # Array.fold
+            # exitWith 1
+      , cliError: \error -> do
+          [ "Command line parsing error: ", ArgParse.printArgError error ]
             # Array.fold
             # exitWith 1
       , exception: \e -> do
@@ -121,56 +138,40 @@ main = do
             # exitWith 1
       }
 
-  case parsedCommand of
-    Left error -> do
-      Console.error $ ArgParse.printArgError error
-      Process.exit 1
-    Right command -> do
-      case command of
-        GenerateFromGitHub { source, id, bindings } -> Aff.launchAff_ do
-          maybeTemplate <- Templates.loadTemplateFromGitHub source id
-          case maybeTemplate of
-            Left error -> do
-              liftEffect $ Console.error $ "Error loading template: " <> show error
-              liftEffect $ Process.exit 1
-            Right template -> do
-              case Templates.instantiate template (bindings # unwrap # Map.toUnfoldable) of
-                Right fileOutputs -> traverse_
-                  ( \(FileOutput { path: p, contents }) -> do
-                      makeParentDirectories p
-                      FileSystem.writeTextFile Encoding.UTF8 p contents
-                  )
-                  fileOutputs
-                Left error -> do
-                  liftEffect $ Console.error $ "Error instantiating template: " <> show error
-                  liftEffect $ Process.exit 1
-        GenerateFromPath { path, bindings } -> Aff.launchAff_ do
-          maybeTemplate <- Templates.loadTemplateFromPath path
-          case maybeTemplate of
-            Left errors -> do
-              liftEffect $ Console.error $ "Failed to load template: " <> show errors
-              liftEffect $ Process.exit 1
-            Right template -> do
-              case Templates.instantiate template (bindings # unwrap # Map.toUnfoldable) of
-                Right fileOutputs -> traverse_
-                  ( \(FileOutput { path: p, contents }) -> do
-                      makeParentDirectories p
-                      FileSystem.writeTextFile Encoding.UTF8 p contents
-                  )
-                  fileOutputs
-                Left error -> do
-                  liftEffect $ Console.error $ "Error instantiating template: " <> show error
-                  liftEffect $ Process.exit 1
+  Om.launchOm_ {} handlers do
+    command <- Om.throwLeftAs (\cliError -> Om.error { cliError }) parsedCommand
+    case command of
+      GenerateFromGitHub { source, id, bindings } -> do
+        template <- Templates.loadTemplateFromGitHub source id
+        fileOutputs <- bindings # unwrap # Map.toUnfoldable # Templates.instantiate template
+          # Om.throwLeftAs (\missingVariables -> Om.error { missingVariables })
+        fileOutputs
+          # traverse_
+              ( \(FileOutput { path: p, contents }) -> do
+                  makeParentDirectories p
+                  FileSystem.writeTextFile Encoding.UTF8 p contents
+              )
+          # liftAff
+      GenerateFromPath { path, bindings } -> do
+        template <- Templates.loadTemplateFromPath path
+        fileOutputs <- bindings # unwrap # Map.toUnfoldable # Templates.instantiate template
+          # Om.throwLeftAs (\missingVariables -> Om.error { missingVariables })
+        fileOutputs
+          # traverse_
+              ( \(FileOutput { path: p, contents }) -> do
+                  makeParentDirectories p
+                  FileSystem.writeTextFile Encoding.UTF8 p contents
+              )
+          # liftAff
 
-        Synthesize { path, id, description, bindings, outputDirectory } -> Aff.launchAff_ do
-          template <- Templates.pathToTemplate id description bindings path
-          let filename = fromMaybe "." outputDirectory <> "/" <> (unwrap id) <> ".json"
-          FileSystem.writeTextFile (Encoding.UTF8) filename (Json.writeJSON template)
+      Synthesize { path, id, description, bindings, outputDirectory } -> do
+        template <- Templates.pathToTemplate id description bindings path
+        let filename = fromMaybe "." outputDirectory <> "/" <> (unwrap id) <> ".json"
+        template # Json.writeJSON # FileSystem.writeTextFile (Encoding.UTF8) filename # liftAff
 
-        ListTemplates { source } -> do
-          Om.launchOm_ {} handlers do
-            templateNames <- Templates.listTemplatesInGitHub source
-            templateNames # traverse_ (unwrap >>> Console.log) # liftEffect
+      ListTemplates { source } -> do
+        templateNames <- Templates.listTemplatesInGitHub source
+        templateNames # traverse_ (unwrap >>> Console.log) # liftEffect
 
 exitWith :: forall m. MonadEffect m => Int -> String -> m Unit
 exitWith code message = do
