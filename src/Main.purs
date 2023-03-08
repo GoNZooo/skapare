@@ -17,9 +17,8 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Aff as Aff
-import Effect.Class as Effect
+import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console as Console
-import Effect.Exception as Exception
 import Node.Encoding as Encoding
 import Node.FS.Aff as FileSystem
 import Node.FS.Perms as Perms
@@ -103,6 +102,24 @@ main = do
   let
     parsedCommand = ArgParse.parseArgs "skapa" "A tool for creating files from templates" parseCommand
       arguments
+    handlers =
+      { gitHubApiError: \e -> do
+          [ "GitHub API error: ", Affjax.printError e ]
+            # Array.fold
+            # exitWith 1
+      , repositoryNotFound: \gitHubSource -> do
+          [ "Repository not found: ", show gitHubSource ]
+            # Array.fold
+            # exitWith 1
+      , gitHubDecodeError: \e -> do
+          [ "Unable to decode GitHub response data: ", show e ]
+            # Array.fold
+            # exitWith 1
+      , exception: \e -> do
+          [ "Unknown error: ", show e ]
+            # Array.fold
+            # exitWith 1
+      }
 
   case parsedCommand of
     Left error -> do
@@ -114,8 +131,8 @@ main = do
           maybeTemplate <- Templates.loadTemplateFromGitHub source id
           case maybeTemplate of
             Left error -> do
-              Effect.liftEffect $ Console.error $ "Error loading template: " <> show error
-              Effect.liftEffect $ Process.exit 1
+              liftEffect $ Console.error $ "Error loading template: " <> show error
+              liftEffect $ Process.exit 1
             Right template -> do
               case Templates.instantiate template (bindings # unwrap # Map.toUnfoldable) of
                 Right fileOutputs -> traverse_
@@ -125,14 +142,14 @@ main = do
                   )
                   fileOutputs
                 Left error -> do
-                  Effect.liftEffect $ Console.error $ "Error instantiating template: " <> show error
-                  Effect.liftEffect $ Process.exit 1
+                  liftEffect $ Console.error $ "Error instantiating template: " <> show error
+                  liftEffect $ Process.exit 1
         GenerateFromPath { path, bindings } -> Aff.launchAff_ do
           maybeTemplate <- Templates.loadTemplateFromPath path
           case maybeTemplate of
             Left errors -> do
-              Effect.liftEffect $ Console.error $ "Failed to load template: " <> show errors
-              Effect.liftEffect $ Process.exit 1
+              liftEffect $ Console.error $ "Failed to load template: " <> show errors
+              liftEffect $ Process.exit 1
             Right template -> do
               case Templates.instantiate template (bindings # unwrap # Map.toUnfoldable) of
                 Right fileOutputs -> traverse_
@@ -142,8 +159,8 @@ main = do
                   )
                   fileOutputs
                 Left error -> do
-                  Effect.liftEffect $ Console.error $ "Error instantiating template: " <> show error
-                  Effect.liftEffect $ Process.exit 1
+                  liftEffect $ Console.error $ "Error instantiating template: " <> show error
+                  liftEffect $ Process.exit 1
 
         Synthesize { path, id, description, bindings, outputDirectory } -> Aff.launchAff_ do
           template <- Templates.pathToTemplate id description bindings path
@@ -151,15 +168,14 @@ main = do
           FileSystem.writeTextFile (Encoding.UTF8) filename (Json.writeJSON template)
 
         ListTemplates { source } -> do
-          let
-            handlers =
-              { getError: \e -> e # Affjax.printError # Console.error
-              , decodeError: \e -> e # show # Console.error
-              , exception: \e -> e # Exception.message # Console.error
-              }
           Om.launchOm_ {} handlers do
             templateNames <- Templates.listTemplatesInGitHub source
-            templateNames # traverse_ (unwrap >>> Console.log) # Effect.liftEffect
+            templateNames # traverse_ (unwrap >>> Console.log) # liftEffect
+
+exitWith :: forall m. MonadEffect m => Int -> String -> m Unit
+exitWith code message = do
+  Console.error message
+  code # Process.exit # liftEffect
 
 makeParentDirectories :: String -> Aff Unit
 makeParentDirectories path = FileSystem.mkdir' (Path.dirname path) { recursive: true, mode }
