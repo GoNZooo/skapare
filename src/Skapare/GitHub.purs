@@ -1,5 +1,6 @@
 module Skapare.GitHub
   ( getTree
+  , GetTreeErrors
   ) where
 
 import Prelude
@@ -18,17 +19,15 @@ import Skapare.Types (GitHubSource(..), GitHubTreeResponse)
 import Yoga.Om (Om)
 import Yoga.Om as Om
 
+type GetTreeErrors errors =
+  ( gitHubApiError :: Affjax.Error
+  , repositoryNotFound :: GitHubSource
+  , gitHubDecodeError :: MultipleErrors
+  | errors
+  )
+
 -- | Gets the `main` tree for a given repository and branch.
-getTree
-  :: forall ctx errors
-   . GitHubSource
-  -> Om (| ctx)
-       ( gitHubApiError :: Affjax.Error
-       , repositoryNotFound :: GitHubSource
-       , gitHubDecodeError :: MultipleErrors
-       | errors
-       )
-       GitHubTreeResponse
+getTree :: forall ctx e. GitHubSource -> Om (| ctx) (GetTreeErrors e) GitHubTreeResponse
 getTree source@(GitHubSource { repo: maybeRepo, user }) = do
   let
     url = "https://api.github.com/repos/" <> user <> "/" <> repo <> "/git/trees/main"

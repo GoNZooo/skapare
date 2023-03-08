@@ -57,15 +57,7 @@ import Yoga.Om (Om)
 
 -- | Lists template in a GitHub repository
 listTemplatesInGitHub
-  :: forall ctx errors
-   . GitHubSource
-  -> Om (| ctx)
-       ( gitHubApiError :: Affjax.Error
-       , repositoryNotFound :: GitHubSource
-       , gitHubDecodeError :: MultipleErrors
-       | errors
-       )
-       (Array TemplateId)
+  :: forall ctx e. GitHubSource -> Om (| ctx) (GitHub.GetTreeErrors e) (Array TemplateId)
 listTemplatesInGitHub source = do
   GitHubTreeResponse { tree } <- GitHub.getTree source
   tree
