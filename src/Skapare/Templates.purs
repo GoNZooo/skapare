@@ -1,6 +1,7 @@
 module Skapare.Templates
   ( instantiate
   , pathToTemplate
+  , loadTemplate
   , loadTemplateFromPath
   , loadTemplateFromGitHub
   , listTemplatesInGitHub
@@ -15,20 +16,23 @@ import Data.Either (Either(..))
 import Data.Foldable (fold, foldMap)
 import Data.List (filterM)
 import Data.List as List
+import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (unwrap, wrap)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
 import Data.String.Utils as StringUtils
 import Data.TemplateString as TemplateString
-import Data.Traversable (traverse)
+import Data.Traversable (traverse, traverse_)
 import Data.Tuple (Tuple)
 import Data.Tuple as Tuple
 import Data.Tuple.Nested ((/\))
 import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
+import Effect.Class.Console as Console
+import Foreign (MultipleErrors)
 import Node.Buffer as Buffer
 import Node.Encoding as Encoding
 import Node.FS.Aff as FileSystem
@@ -46,7 +50,7 @@ import Skapare.Types
   , GitHubSource(..)
   , GitHubTreeItem(..)
   , GitHubTreeResponse(..)
-  , JsonDecodingError
+  , Sha
   , Template(..)
   , TemplateDescription
   , TemplateId
@@ -57,17 +61,23 @@ import Type.Row (type (+))
 import Yoga.Om (Om)
 import Yoga.Om as Om
 
+type TemplateContext ctx = { cacheDirectory :: String | ctx }
+
 -- | Lists template in a GitHub repository
 listTemplatesInGitHub
-  :: forall ctx e. GitHubSource -> Om (| ctx) (GitHub.GetTreeErrors e) (Array TemplateId)
+  :: forall ctx e
+   . GitHubSource
+  -> Om (| ctx) (GitHub.GetTreeErrors + e) (Map TemplateId Sha)
 listTemplatesInGitHub source = do
   GitHubTreeResponse { tree } <- GitHub.getTree source
   tree
     # Array.filter (\(GitHubTreeItem { path }) -> StringUtils.endsWith ".json" path)
     # map
-        ( \(GitHubTreeItem { path }) ->
-            path # String.take (String.length path - 5) # wrap
+        ( \(GitHubTreeItem { path, sha }) -> do
+            let templateId = path # String.take (String.length path - 5) # wrap
+            templateId /\ sha
         )
+    # Map.fromFoldable
     # pure
 
 -- | Instantiates a template with a set of variables so that it can be filled in.
@@ -109,16 +119,69 @@ pathToTemplate id description bindings path = do
     )
     <$> pathToEntity bindings relativePath
 
-type LoadTemplateFromPathError e = JsonDecodingError + e
+type LoadTemplateFromPathErrors e = UnreadableFileError + TemplateDecodingError + e
+
+type TemplateDecodingError e = (templateDecodingError :: MultipleErrors | e)
+
+type UnreadableFileError e = (unreadableFile :: FilePath | e)
+
+-- | Loads a template either from disk if cached or from GitHub if not.
+loadTemplate
+  :: forall ctx e
+   . GitHubSource
+  -> TemplateId
+  -> Om (TemplateContext ctx) (LoadTemplateFromGitHubErrors + LoadTemplateFromPathErrors + e) Template
+loadTemplate source id = do
+  githubTemplates <- listTemplatesInGitHub source
+  let gitHubTemplateSha = Map.lookup id githubTemplates
+  cachedTemplate <- maybe (pure Nothing) (loadCachedTemplate source id) gitHubTemplateSha
+  template <- maybe (loadTemplateFromGitHub source id) pure cachedTemplate
+  traverse_ (cacheTemplate source template) gitHubTemplateSha
+  pure template
+
+cacheTemplate
+  :: forall ctx e
+   . GitHubSource
+  -> Template
+  -> Sha
+  -> Om (TemplateContext ctx) (LoadTemplateFromGitHubErrors + e) Unit
+cacheTemplate source template sha = do
+  { cacheDirectory } <- Om.ask
+  let templatePath = templateCachePath cacheDirectory source (template # unwrap # _.id) sha
+  templatePath # Utilities.makeParentDirectories # liftAff
+  template
+    # Json.writeJSON
+    # FileSystem.writeTextFile Encoding.UTF8 templatePath
+    # liftAff
+    # void
+
+-- | Loads a cached template if it exists
+loadCachedTemplate
+  :: forall ctx e
+   . GitHubSource
+  -> TemplateId
+  -> Sha
+  -> Om (TemplateContext ctx) e (Maybe Template)
+loadCachedTemplate source id sha = do
+  { cacheDirectory } <- Om.ask
+  let
+    templatePath = templateCachePath cacheDirectory source id sha
+    handlers = { unreadableFile: const (pure Nothing), templateDecodingError: const (pure Nothing) }
+  Om.handleErrors handlers $ Just <$> loadTemplateFromPath templatePath
 
 -- | Loads a template from a filename.
 loadTemplateFromPath
   :: forall ctx e
    . FilePath
-  -> Om (| ctx) (LoadTemplateFromPathError + e) Template
+  -> Om (| ctx) (LoadTemplateFromPathErrors + e) Template
 loadTemplateFromPath path = do
-  maybeTemplate <- Json.readJSON <$> (path # FileSystem.readTextFile Encoding.UTF8 # liftAff)
-  Om.throwLeftAs (\jsonDecodingError -> Om.error { jsonDecodingError }) maybeTemplate
+  fileData <-
+    path
+      # FileSystem.readTextFile Encoding.UTF8
+      # liftAff
+      # Utilities.handleError (const $ Om.throw { unreadableFile: path })
+  let maybeTemplate = Json.readJSON fileData
+  Om.throwLeftAs (\templateDecodingError -> Om.error { templateDecodingError }) maybeTemplate
 
 type LoadTemplateFromGitHubErrors e = GitHub.GetTreeErrors + e
 
@@ -142,6 +205,7 @@ loadTemplateFromGitHub source@(GitHubSource { user, repo }) id = do
         , unwrap id
         , ".json"
         ]
+  Console.log $ fold [ "Loading template '", unwrap id, "' from GitHub: ", url ]
   maybeResponse <- url # Affjax.get ResponseFormat.string # liftAff
   when (Utilities.getResponseStatusCode maybeResponse == Just (wrap 404)) do
     Om.throw { repositoryNotFound: source }
@@ -222,3 +286,20 @@ readIgnoreFile path = do
     (String.split (Pattern "\n") >>> Array.filter (_ /= "")) <$>
       FileSystem.readTextFile Encoding.UTF8 (path <> "/.skapareignore")
   else pure []
+
+templateCachePath :: FilePath -> GitHubSource -> TemplateId -> Sha -> FilePath
+templateCachePath cacheDirectory source id sha =
+  fold
+    [ cacheDirectory
+    , "/github/"
+    , source # unwrap # _.user
+    , "/"
+    , repo
+    , "/"
+    , unwrap id
+    , "/"
+    , unwrap sha
+    , ".json"
+    ]
+  where
+  repo = source # unwrap # _.repo # fromMaybe "skapare-templates"

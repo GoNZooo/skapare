@@ -13,6 +13,18 @@ import Node.Path (FilePath)
 import Record as Record
 import Simple.JSON (class ReadForeign, class WriteForeign, readImpl, writeImpl)
 
+newtype Sha = Sha String
+
+derive instance Generic Sha _
+derive instance Newtype Sha _
+derive instance Eq Sha
+
+instance Show Sha where
+  show = genericShow
+
+instance ReadForeign Sha where
+  readImpl f = Sha <$> readImpl f
+
 type JsonDecodingError e =
   ( jsonDecodingError :: MultipleErrors
   | e
@@ -33,7 +45,7 @@ instance ReadForeign GitHubTreeResponse where
 
 newtype GitHubTreeItem = GitHubTreeItem
   { path :: String
-  , sha :: String
+  , sha :: Sha
   }
 
 derive instance Generic GitHubTreeItem _
@@ -101,9 +113,10 @@ derive newtype instance showBindings :: Show Bindings
 
 newtype GitHubSource = GitHubSource { user :: String, repo :: Maybe String }
 
-derive instance eqTemplateSource :: Eq GitHubSource
-derive instance genericTemplateSource :: Generic GitHubSource _
-derive instance ordTemplateSource :: Ord GitHubSource
+derive instance Eq GitHubSource
+derive instance Generic GitHubSource _
+derive instance Ord GitHubSource
+derive instance Newtype GitHubSource _
 
 instance showTemplateSource :: Show GitHubSource where
   show = genericShow
