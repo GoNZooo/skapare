@@ -1,10 +1,9 @@
 module Skapare.Templates
-  ( instantiate
-  , pathToTemplate
-  , loadTemplate
-  , loadTemplateFromPath
-  , loadTemplateFromGitHub
-  , listTemplatesInGitHub
+  ( generateFromGitHub
+  , generateFromPath
+  , synthesize
+  , listTemplates
+  , instantiate
   ) where
 
 import Prelude
@@ -62,6 +61,71 @@ import Yoga.Om (Om)
 import Yoga.Om as Om
 
 type TemplateContext ctx = { cacheDirectory :: String | ctx }
+
+type InstantiationErrors e = (missingVariables :: Array TemplateVariable | e)
+
+-- | Generates files from a template hosted on GitHub.
+generateFromGitHub
+  :: forall ctx e
+   . GitHubSource
+  -> TemplateId
+  -> Bindings
+  -> Om (TemplateContext ctx)
+       (LoadTemplateFromGitHubErrors + LoadTemplateFromPathErrors + InstantiationErrors + e)
+       Unit
+generateFromGitHub source id bindings = do
+  template <- loadTemplate source id
+  fileOutputs <-
+    bindings
+      # unwrap
+      # Map.toUnfoldable
+      # instantiate template
+      # Om.throwLeftAs (\missingVariables -> Om.error { missingVariables })
+  fileOutputs
+    # traverse_
+        ( \(FileOutput { path: p, contents }) -> do
+            Utilities.makeParentDirectories p
+            FileSystem.writeTextFile Encoding.UTF8 p contents
+        )
+    # liftAff
+
+-- | Generates files from a template stored on disk.
+generateFromPath
+  :: forall ctx e
+   . FilePath
+  -> Bindings
+  -> Om (| ctx) (LoadTemplateFromPathErrors + InstantiationErrors + e) Unit
+generateFromPath path bindings = do
+  template <- loadTemplateFromPath path
+  fileOutputs <- bindings # unwrap # Map.toUnfoldable # instantiate template
+    # Om.throwLeftAs (\missingVariables -> Om.error { missingVariables })
+  fileOutputs
+    # traverse_
+        ( \(FileOutput { path: p, contents }) -> do
+            Utilities.makeParentDirectories p
+            FileSystem.writeTextFile Encoding.UTF8 p contents
+        )
+    # liftAff
+
+-- | Synthesizes a directory or file into a template.
+synthesize
+  :: forall ctx e
+   . FilePath
+  -> TemplateId
+  -> TemplateDescription
+  -> Bindings
+  -> Maybe FilePath
+  -> Om (| ctx) (PathToEntityErrors + e) Unit
+synthesize path id description bindings outputDirectory = do
+  template <- pathToTemplate id description bindings path
+  let filename = fromMaybe "." outputDirectory <> "/" <> (unwrap id) <> ".json"
+  template # Json.writeJSON # FileSystem.writeTextFile (Encoding.UTF8) filename # liftAff
+
+-- | Prints templates in a GitHub repository.
+listTemplates :: forall ctx e. GitHubSource -> Om (| ctx) (GitHub.GetTreeErrors + e) Unit
+listTemplates source = do
+  templateNames <- Map.keys <$> listTemplatesInGitHub source
+  templateNames # traverse_ (unwrap >>> Console.log) # liftEffect
 
 -- | Lists template in a GitHub repository
 listTemplatesInGitHub
