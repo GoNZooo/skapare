@@ -122,10 +122,16 @@ synthesize path id description bindings outputDirectory = do
   template # Json.writeJSON # FileSystem.writeTextFile (Encoding.UTF8) filename # liftAff
 
 -- | Prints templates in a GitHub repository.
-listTemplates :: forall ctx e. GitHubSource -> Om (| ctx) (GitHub.GetTreeErrors + e) Unit
+listTemplates
+  :: forall ctx e. GitHubSource -> Om (TemplateContext ctx) (GitHub.GetTreeErrors + e) Unit
 listTemplates source = do
-  templateNames <- Map.keys <$> listTemplatesInGitHub source
-  templateNames # traverse_ (unwrap >>> Console.log) # liftEffect
+  (templateNames :: Array (Tuple TemplateId Sha)) <- Map.toUnfoldable <$> listTemplatesInGitHub source
+  traverse_ printTemplateInfo templateNames
+  where
+  printTemplateInfo (id /\ sha) = do
+    maybeTemplate <- loadCachedTemplate source id sha
+    let cachedText = maybe "" (const "(cached)") maybeTemplate
+    Console.log $ fold [ unwrap id, " ", cachedText ]
 
 -- | Lists template in a GitHub repository
 listTemplatesInGitHub
