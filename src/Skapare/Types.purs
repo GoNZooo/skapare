@@ -103,6 +103,7 @@ data Command
       , outputDirectory :: Maybe FilePath
       }
   | ListTemplates { source :: GitHubSource }
+  | ListCachedRepositories
 
 newtype Bindings = Bindings (Map String String)
 

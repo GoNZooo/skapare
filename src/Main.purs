@@ -103,6 +103,9 @@ main = do
         ListTemplates { source } -> do
           Templates.listTemplates source
 
+        ListCachedRepositories -> do
+          Templates.listCachedRepositories
+
 parseCommand :: ArgParser Command
 parseCommand =
   ArgParse.choose "command"
@@ -126,6 +129,8 @@ parseCommand =
             { source: parseTemplateSource
             }
           <* ArgParse.flagHelp
+    , ArgParse.command [ "cached-repos" ] "List cached repositories" do
+        pure ListCachedRepositories <$> ArgParse.flagHelp
     ]
 
 parseGenerate :: ArgParser Command

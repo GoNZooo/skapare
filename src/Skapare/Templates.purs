@@ -4,6 +4,7 @@ module Skapare.Templates
   , synthesize
   , listTemplates
   , instantiate
+  , listCachedRepositories
   ) where
 
 import Prelude
@@ -132,6 +133,35 @@ listTemplates source = do
     maybeTemplate <- loadCachedTemplate source id sha
     let cachedText = maybe "" (const "(cached)") maybeTemplate
     Console.log $ fold [ unwrap id, " ", cachedText ]
+
+-- | Prints cached repositories.
+listCachedRepositories :: forall ctx e. Om (TemplateContext ctx) e Unit
+listCachedRepositories = do
+  cachedRepositories <- getCachedRepositories
+  traverse_ printCachedRepository cachedRepositories
+
+-- | Gets cached repositories.
+getCachedRepositories :: forall ctx e. Om (TemplateContext ctx) e (Array (Tuple FilePath FilePath))
+getCachedRepositories = do
+  { cacheDirectory } <- Om.ask
+  users <- cacheDirectory # (_ <> "/github") # FileSystem.readdir # liftAff
+  userRepositories <-
+    users
+      # traverse
+          ( \u -> do
+              repositories <- cacheDirectory # (_ <> "/github/" <> u) # FileSystem.readdir # liftAff
+              repositories # map (\r -> u /\ r) # pure
+          )
+      # map join
+  pure userRepositories
+
+printCachedRepository :: forall ctx e. (Tuple FilePath FilePath) -> Om (TemplateContext ctx) e Unit
+printCachedRepository (user /\ repository) = do
+  { cacheDirectory } <- Om.ask
+  let fullPath = cacheDirectory <> "/github/" <> user <> "/" <> repository
+  templates <- fullPath # FileSystem.readdir # liftAff
+  [ user, "/", repository ] # fold # Console.log
+  traverse_ (("  " <> _) >>> Console.log) templates
 
 -- | Lists template in a GitHub repository
 listTemplatesInGitHub
