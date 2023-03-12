@@ -11,6 +11,7 @@ import Prelude
 
 import Affjax.Node as Affjax
 import Affjax.ResponseFormat as ResponseFormat
+import Control.Alt ((<|>))
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (fold, foldMap)
@@ -232,12 +233,46 @@ loadTemplate
   -> TemplateId
   -> Om (TemplateContext ctx) (LoadTemplateFromGitHubErrors + LoadTemplateFromPathErrors + e) Template
 loadTemplate source id = do
-  githubTemplates <- listTemplatesInGitHub source
+  latestCachedVersion <- loadLatestCachedTemplate source id
+  let
+    mapWithCachedSha =
+      maybe Map.empty (\(sha /\ _template) -> Map.singleton id sha) latestCachedVersion
+    listTemplatesHandlers =
+      { gitHubApiError: \_e -> pure mapWithCachedSha
+      , jsonDecodingError: \_e -> pure mapWithCachedSha
+      }
+  githubTemplates <- Om.handleErrors listTemplatesHandlers $ listTemplatesInGitHub source
   let gitHubTemplateSha = Map.lookup id githubTemplates
-  cachedTemplate <- maybe (pure Nothing) (loadCachedTemplate source id) gitHubTemplateSha
+  cachedTemplate <-
+    maybe
+      (pure Nothing)
+      (\sha -> loadCachedTemplate source id sha <|> pure (map Tuple.snd latestCachedVersion))
+      gitHubTemplateSha
   template <- maybe (loadTemplateFromGitHub source id) pure cachedTemplate
   traverse_ (cacheTemplate source template) gitHubTemplateSha
   pure template
+
+-- | Loads the latest cached version of a template.
+loadLatestCachedTemplate
+  :: forall ctx e
+   . GitHubSource
+  -> TemplateId
+  -> Om (TemplateContext ctx) e (Maybe (Tuple Sha Template))
+loadLatestCachedTemplate source id = do
+  { cacheDirectory } <- Om.ask
+  let templateDirectory = templateCacheDirectory cacheDirectory source id
+  versions <- templateDirectory # FileSystem.readdir # liftAff
+  latest <- versions
+    # map (\v -> templateDirectory <> "/" <> v)
+    # traverse (\p -> (p /\ _) <$> liftAff (FileSystem.stat p))
+    # map
+        ( Array.sortBy
+            ( \(_p1 /\ s1) (_p2 /\ s2) ->
+                compare (Stats.modifiedTime s2) (Stats.modifiedTime s1)
+            )
+        )
+    # map (map (Tuple.fst >>> flip Path.basenameWithoutExt ".json" >>> wrap) >>> Array.head)
+  maybe (pure Nothing) (\sha -> sha # loadCachedTemplate source id # map (map (sha /\ _))) latest
 
 cacheTemplate
   :: forall ctx e
@@ -387,8 +422,8 @@ readIgnoreFile path = do
       FileSystem.readTextFile Encoding.UTF8 (path <> "/.skapareignore")
   else pure []
 
-templateCachePath :: FilePath -> GitHubSource -> TemplateId -> Sha -> FilePath
-templateCachePath cacheDirectory source id sha =
+templateCacheDirectory :: FilePath -> GitHubSource -> TemplateId -> FilePath
+templateCacheDirectory cacheDirectory source id =
   fold
     [ cacheDirectory
     , "/github/"
@@ -397,9 +432,15 @@ templateCachePath cacheDirectory source id sha =
     , repo
     , "/"
     , unwrap id
+    ]
+  where
+  repo = source # unwrap # _.repo # fromMaybe "skapare-templates"
+
+templateCachePath :: FilePath -> GitHubSource -> TemplateId -> Sha -> FilePath
+templateCachePath cacheDirectory source id sha =
+  fold
+    [ templateCacheDirectory cacheDirectory source id
     , "/"
     , unwrap sha
     , ".json"
     ]
-  where
-  repo = source # unwrap # _.repo # fromMaybe "skapare-templates"
