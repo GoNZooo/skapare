@@ -32,6 +32,7 @@ to generate this file without the comments in this block.
   , "node-path"
   , "node-process"
   , "ordered-collections"
+  , "partial"
   , "prelude"
   , "quickcheck"
   , "record"

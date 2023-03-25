@@ -5,6 +5,7 @@ module Skapare.Templates
   , listTemplates
   , instantiate
   , listCachedRepositories
+  , isIgnored
   ) where
 
 import Prelude
@@ -23,6 +24,9 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (unwrap, wrap)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
+import Data.String.Regex (Regex)
+import Data.String.Regex as Regex
+import Data.String.Regex.Flags as RegexFlags
 import Data.String.Utils as StringUtils
 import Data.TemplateString as TemplateString
 import Data.Traversable (traverse, traverse_)
@@ -65,6 +69,8 @@ import Yoga.Om as Om
 type TemplateContext ctx = { cacheDirectory :: String | ctx }
 
 type InstantiationErrors e = (missingVariables :: Array TemplateVariable | e)
+
+type ReadIgnoreFileError e = (badRegexInIgnoreFile :: String | e)
 
 -- | Generates files from a template hosted on GitHub.
 generateFromGitHub
@@ -117,7 +123,7 @@ synthesize
   -> TemplateDescription
   -> Bindings
   -> Maybe FilePath
-  -> Om (| ctx) (PathToEntityErrors + e) Unit
+  -> Om (| ctx) (ReadIgnoreFileError + PathToEntityErrors + e) Unit
 synthesize path id description bindings outputDirectory = do
   template <- pathToTemplate id description bindings path
   let filename = fromMaybe "." outputDirectory <> "/" <> (unwrap id) <> ".json"
@@ -205,7 +211,7 @@ pathToTemplate
   -> TemplateDescription
   -> Bindings
   -> String
-  -> Om (| ctx) (PathToEntityErrors + e) (Maybe Template)
+  -> Om (| ctx) (ReadIgnoreFileError + PathToEntityErrors + e) (Maybe Template)
 pathToTemplate id description bindings path = do
   currentDirectory <- liftEffect Process.cwd
   let relativePath = Path.relative currentDirectory path
@@ -363,7 +369,11 @@ type IsSymbolicLinkError e = (isSymbolicLinkError :: String | e)
 
 type StatError e = (statError :: String | e)
 
-pathToEntity :: forall ctx e. Bindings -> String -> Om (| ctx) (PathToEntityErrors + e) (Maybe Entity)
+pathToEntity
+  :: forall ctx e
+   . Bindings
+  -> String
+  -> Om (| ctx) (ReadIgnoreFileError + PathToEntityErrors + e) (Maybe Entity)
 pathToEntity bindings path = do
   stats <- path # FileSystem.stat # liftAff -- # Aff.catchError (\e -> Om.throw { statError: path })
   let
@@ -375,9 +385,12 @@ pathToEntity bindings path = do
     _, _ -> liftAff $ fileToEntity bindings path
 
 directoryToEntity
-  :: forall ctx e. Bindings -> String -> Om (| ctx) (PathToEntityErrors + e) (Maybe Entity)
+  :: forall ctx e
+   . Bindings
+  -> String
+  -> Om (| ctx) (PathToEntityErrors + ReadIgnoreFileError + e) (Maybe Entity)
 directoryToEntity bindings path = do
-  ignorePatterns <- path # readIgnoreFile # liftAff
+  ignorePatterns <- readIgnoreFile path
   children <- map (\p -> path <> "/" <> p) <$> (path # FileSystem.readdir # liftAff)
   validFiles <-
     children
@@ -410,16 +423,19 @@ isNotSymbolicLink path = do
   stats <- FileSystem.stat path
   stats # Stats.isSymbolicLink # not # pure
 
-isIgnored :: Array String -> String -> Boolean
-isIgnored ignorePatterns path =
-  ignorePatterns # Array.any (\p -> String.contains (Pattern p) path)
+isIgnored :: Array Regex -> String -> Boolean
+isIgnored ignorePatterns path = do
+  let pathWithoutRoot = path # String.split (wrap "/") # Array.drop 1 # String.joinWith "/"
+  ignorePatterns # Array.any (\r -> Regex.test r pathWithoutRoot)
 
-readIgnoreFile :: String -> Aff (Array String)
+readIgnoreFile :: forall ctx e. String -> Om (| ctx) (ReadIgnoreFileError e) (Array Regex)
 readIgnoreFile path = do
   hasIgnoreFile <- liftEffect $ FileSystemSync.exists (path <> "/.skapareignore")
   if hasIgnoreFile then do
-    (String.split (Pattern "\n") >>> Array.filter (_ /= "")) <$>
+    lines <- liftAff $ (String.split (Pattern "\n") >>> Array.filter (_ /= "")) <$>
       FileSystem.readTextFile Encoding.UTF8 (path <> "/.skapareignore")
+    let linesAsRegex = traverse (\l -> Regex.regex l RegexFlags.noFlags) lines
+    Om.throwLeftAs (\badRegexInIgnoreFile -> Om.error { badRegexInIgnoreFile }) linesAsRegex
   else pure []
 
 templateCacheDirectory :: FilePath -> GitHubSource -> TemplateId -> FilePath

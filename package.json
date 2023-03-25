@@ -1,6 +1,6 @@
 {
   "name": "skapare",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "",
   "bin": {
     "skapare": "bin/index.js"
@@ -20,6 +20,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "purs-tidy": "^0.9.3",
     "xhr2": "^0.2.1"
   },
   "devDependencies": {

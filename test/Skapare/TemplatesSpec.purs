@@ -4,7 +4,11 @@ import Prelude
 
 import Data.Either (Either(..))
 import Data.Newtype (wrap)
+import Data.String.Regex (Regex)
+import Data.String.Regex as Regex
+import Data.String.Regex.Flags as RegexFlags
 import Data.Tuple.Nested ((/\))
+import Partial.Unsafe as PartialUnsafe
 import Skapare.Templates as Template
 import Skapare.Types
   ( Entity(..)
@@ -102,3 +106,18 @@ spec = do
       Template.instantiate template [] `shouldEqual`
         Left [ wrap "value" ]
 
+  describe "Ignore files" do
+    it "Should only ignore files with partial initial matches if the directory matches" do
+      let
+        ignoredFiles = [ stringToRegex ".git/.*" ]
+        path1 = "directory/.git/HEAD"
+        path2 = "directory/.gitignore"
+      Template.isIgnored ignoredFiles path1 `shouldEqual` true
+      Template.isIgnored ignoredFiles path2 `shouldEqual` false
+
+stringToRegex :: String -> Regex
+stringToRegex s = Regex.regex s RegexFlags.noFlags # unsafeFromRight
+
+unsafeFromRight :: forall l r. Either l r -> r
+unsafeFromRight (Right v) = v
+unsafeFromRight (Left _) = PartialUnsafe.unsafeCrashWith "unsafeFromRight: Left"

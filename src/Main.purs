@@ -74,8 +74,13 @@ main = do
           [ "Unknown error: ", show e ]
             # Array.fold
             # exitWith 1
-      , unreadableFile: \path -> do
-          [ "Unable to read file: ", path ]
+      , unreadableFile: \path ->
+          do
+            [ "Unable to read file: ", path ]
+              # Array.fold
+              # exitWith 1
+      , badRegexInIgnoreFile: \s -> do
+          [ "Bad regex in ignore file: ", s ]
             # Array.fold
             # exitWith 1
       }
