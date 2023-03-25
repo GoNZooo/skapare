@@ -267,7 +267,7 @@ loadLatestCachedTemplate
 loadLatestCachedTemplate source id = do
   { cacheDirectory } <- Om.ask
   let templateDirectory = templateCacheDirectory cacheDirectory source id
-  versions <- templateDirectory # FileSystem.readdir # liftAff
+  versions <- (templateDirectory # FileSystem.readdir # liftAff) <|> pure []
   latest <- versions
     # map (\v -> templateDirectory <> "/" <> v)
     # traverse (\p -> (p /\ _) <$> liftAff (FileSystem.stat p))
