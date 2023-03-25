@@ -107,13 +107,15 @@ spec = do
         Left [ wrap "value" ]
 
   describe "Ignore files" do
-    it "Should only ignore files with partial initial matches if the directory matches" do
+    it "Should ignore git top-level directory with correct ignore line" do
       let
-        ignoredFiles = [ stringToRegex ".git/.*" ]
-        path1 = "directory/.git/HEAD"
-        path2 = "directory/.gitignore"
+        ignoredFiles = [ stringToRegex ".git$" ]
+        path1 = "directory/.git"
+        path2 = "directory/.git/HEAD"
+        path3 = "directory/.gitignore"
       Template.isIgnored ignoredFiles path1 `shouldEqual` true
       Template.isIgnored ignoredFiles path2 `shouldEqual` false
+      Template.isIgnored ignoredFiles path3 `shouldEqual` false
 
 stringToRegex :: String -> Regex
 stringToRegex s = Regex.regex s RegexFlags.noFlags # unsafeFromRight

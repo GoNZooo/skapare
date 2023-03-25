@@ -424,9 +424,8 @@ isNotSymbolicLink path = do
   stats # Stats.isSymbolicLink # not # pure
 
 isIgnored :: Array Regex -> String -> Boolean
-isIgnored ignorePatterns path = do
-  let pathWithoutRoot = path # String.split (wrap "/") # Array.drop 1 # String.joinWith "/"
-  ignorePatterns # Array.any (\r -> Regex.test r pathWithoutRoot)
+isIgnored ignorePatterns path =
+  ignorePatterns # Array.any (\r -> Regex.test r path)
 
 readIgnoreFile :: forall ctx e. String -> Om (| ctx) (ReadIgnoreFileError e) (Array Regex)
 readIgnoreFile path = do
