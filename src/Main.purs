@@ -83,6 +83,10 @@ main = do
           [ "Bad regex in ignore file: ", s ]
             # Array.fold
             # exitWith 1
+      , unableToFetchOrLoadCachedTemplate: \{ source, id } -> do
+          [ "Unable to fetch or load cached template: ", show source, " ", unwrap id ]
+            # Array.fold
+            # exitWith 1
       }
 
   Aff.launchAff_ do

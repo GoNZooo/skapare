@@ -79,7 +79,12 @@ generateFromGitHub
   -> TemplateId
   -> Bindings
   -> Om (TemplateContext ctx)
-       (LoadTemplateFromGitHubErrors + LoadTemplateFromPathErrors + InstantiationErrors + e)
+       ( UnableToFetchOrLoadCachedTemplate
+           + LoadTemplateFromGitHubErrors
+           + LoadTemplateFromPathErrors
+           + InstantiationErrors
+           + e
+       )
        Unit
 generateFromGitHub source id bindings = do
   template <- loadTemplate source id
@@ -232,12 +237,21 @@ type TemplateDecodingError e = (templateDecodingError :: MultipleErrors | e)
 
 type UnreadableFileError e = (unreadableFile :: FilePath | e)
 
+type UnableToFetchOrLoadCachedTemplate e =
+  (unableToFetchOrLoadCachedTemplate :: { source :: GitHubSource, id :: TemplateId } | e)
+
 -- | Loads a template either from disk if cached or from GitHub if not.
 loadTemplate
   :: forall ctx e
    . GitHubSource
   -> TemplateId
-  -> Om (TemplateContext ctx) (LoadTemplateFromGitHubErrors + LoadTemplateFromPathErrors + e) Template
+  -> Om (TemplateContext ctx)
+       ( UnableToFetchOrLoadCachedTemplate
+           + LoadTemplateFromGitHubErrors
+           + LoadTemplateFromPathErrors
+           + e
+       )
+       Template
 loadTemplate source id = do
   latestCachedVersion <- loadLatestCachedTemplate source id
   let
@@ -254,8 +268,10 @@ loadTemplate source id = do
       (pure Nothing)
       (\sha -> loadCachedTemplate source id sha <|> pure (map Tuple.snd latestCachedVersion))
       gitHubTemplateSha
-  template <- maybe (loadTemplateFromGitHub source id) pure cachedTemplate
-  traverse_ (cacheTemplate source template) gitHubTemplateSha
+  newTemplate <- (Just <$> loadTemplateFromGitHub source id) <|> pure Nothing
+  traverse_ (\t -> traverse_ (cacheTemplate source t) gitHubTemplateSha) newTemplate
+  template <-
+    (newTemplate <|> cachedTemplate) # Om.note { unableToFetchOrLoadCachedTemplate: { source, id } }
   pure template
 
 -- | Loads the latest cached version of a template.
