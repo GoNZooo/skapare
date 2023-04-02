@@ -268,11 +268,15 @@ loadTemplate source id = do
       (pure Nothing)
       (\sha -> loadCachedTemplate source id sha <|> pure (map Tuple.snd latestCachedVersion))
       gitHubTemplateSha
-  newTemplate <- (Just <$> loadTemplateFromGitHub source id) <|> pure Nothing
-  traverse_ (\t -> traverse_ (cacheTemplate source t) gitHubTemplateSha) newTemplate
-  template <-
-    (newTemplate <|> cachedTemplate) # Om.note { unableToFetchOrLoadCachedTemplate: { source, id } }
-  pure template
+  case cachedTemplate of
+    Just template -> pure template
+    Nothing -> do
+      newTemplate <- (Just <$> loadTemplateFromGitHub source id) <|> pure Nothing
+      traverse_ (\t -> traverse_ (cacheTemplate source t) gitHubTemplateSha) newTemplate
+      template <-
+        (newTemplate <|> cachedTemplate) # Om.note
+          { unableToFetchOrLoadCachedTemplate: { source, id } }
+      pure template
 
 -- | Loads the latest cached version of a template.
 loadLatestCachedTemplate
